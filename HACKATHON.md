@@ -155,6 +155,11 @@ Registrarlo en la sección siguiente para la entrega.
   - `/inspector history`: tendencia de las últimas 20 sesiones del proyecto con sparkline, cambio total, sesiones sobre el presupuesto y una fila por sesión.
   - Probado en sesiones reales: `█▁ 30k to 34k`, "-3,377 tokens" al quitar los MCP servers con `--strict-mcp-config`.
   - Tests: 25 de UI y 27 unitarios, todos en verde.
+- **2026-11-21 · Plan de recorte (v0.6.0).**
+  - `/inspector trim`: cada palanca como un paso con su comando exacto (`claude plugin disable <plugin> --scope local`, o `/mcp` → Disable para un servidor), total acumulado y cuántos pasos hacen falta para entrar en el presupuesto.
+  - Verificado que `claude plugin disable cloudflare --scope local` resuelve `cloudflare@cloudflare` y solo escribe `.claude/settings.local.json` del proyecto; el comando para deshacer también funciona.
+  - Sesión real: 33,828 tokens con presupuesto de 30k; el plan libera ~1,665 y avisa que sigue ~2,163 por encima.
+  - Tests: 26 de UI y 29 unitarios, todos en verde.
 
 ## Checklist de entrega
 

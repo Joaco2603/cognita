@@ -7,6 +7,7 @@ import {
   emptyUsage,
   formatHistory,
   formatJson,
+  formatTrimPlan,
   formatReport,
   measurePrompt,
   recordSkillUse,
@@ -46,6 +47,7 @@ const HELP = [
   '- `/inspector report full`: same, with an exact token count',
   '- `/inspector report json`: the same data as JSON, for scripts and CI (add `full` for exact counts)',
   '- `/inspector history`: how the loadout changed across the last sessions in this project',
+  '- `/inspector trim`: a step-by-step plan, with commands, to shrink what loads before the first message',
   '- `/inspector help`: this list',
 ].join('\n')
 
@@ -134,6 +136,15 @@ export function register(on: ModOn): void {
         const measured = applyLoadout(await readLoadout($, detail, usageLog, currentDirectory), detail)
         if (options.has('json')) return { text: '```json\n' + formatJson(measured, since, alerts) + '\n```' }
         return { text: formatReport(measured, promptCapture(), usageLog, since, alerts.budget) }
+      } catch {
+        return { text: 'Could not measure the context window for this session.' }
+      }
+    }
+
+    if (subcommand === 'trim') {
+      try {
+        const measured = applyLoadout(await readLoadout($, 'summary', usageLog, currentDirectory), 'summary')
+        return { text: formatTrimPlan(measured, alerts.budget) }
       } catch {
         return { text: 'Could not measure the context window for this session.' }
       }

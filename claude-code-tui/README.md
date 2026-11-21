@@ -7,6 +7,7 @@ A Claude Code plugin that shows **what your session has loaded into the context 
 - **Since last session.** Each measurement is saved per project, so the next session shows what changed: `MCP server linear: added, 3,000 tokens`, a plugin's skills growing, a CLAUDE.md that doubled, a model switch. Catch context creep before it costs you.
 - **Loaded but unused.** The plugin watches tool calls and skill use in the session and lists the MCP servers and skills that cost tokens but were never used. These are the first candidates to disable for the project.
 - **System prompt sections.** See every section of the last composed system prompt, including the ones *other plugins* inject (`<plugin>:<name>` ids), with approximate token sizes.
+- **Trim plan.** `/inspector trim` turns the levers into numbered steps with the exact command for each one (`claude plugin disable cloudflare --scope local`, the `/mcp` toggle for a server), a running total, and how many steps it takes to get within your budget. Plugin changes apply to this project only and come with the undo command.
 - **History.** `/inspector history` shows how the loadout moved over the last 20 sessions in the project: a sparkline, the overall change, how many sessions went over budget, and one row per session.
 - **Startup check.** When a session starts, the loadout is measured in the background. A toast warns you if it grew by 2,000 tokens or more since the last session, or went over your budget, and names the biggest cause: `Context loadout grew +3.4k since last session, mostly MCP server linear (new)`.
 - **Context budget.** Set `CLAUDE_INSPECTOR_BUDGET=30k` and the report says whether what loads before the first message fits.
@@ -41,6 +42,7 @@ Start Claude Code with `claude` and run `/inspector`. If a session is already ru
 | `/inspector context` | Open the pane on the context loadout |
 | `/inspector report` | Print the loadout as Markdown (estimated counts, fast) |
 | `/inspector report full` | The same report with exact token counts |
+| `/inspector trim` | A step-by-step plan, with commands, to shrink what loads before the first message |
 | `/inspector history` | The loadout over the last 20 sessions in this project, with a sparkline |
 | `/inspector report json` | The same data as JSON, for scripts and CI (combine with `full`) |
 | `/inspector help` | List the subcommands |

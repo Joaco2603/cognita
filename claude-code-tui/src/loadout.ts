@@ -62,6 +62,9 @@ export type Lever = {
   key: string
   text: string
   tokens: number
+  /** What to act on: an MCP server, a plugin, or an instruction file. */
+  kind: 'mcp' | 'plugin' | 'file'
+  target: string
 }
 
 export type Loadout = {
@@ -238,6 +241,8 @@ export function findLevers(
       .filter((server) => server.calls === 0 && server.tokens > 0)
       .map((server) => ({
         key: `mcp-${server.server}`,
+        kind: 'mcp' as const,
+        target: server.server,
         text: `Disable MCP server ${code(server.server)} for this project (${plural(server.loadedTools, 'loaded tool')}, no calls)`,
         tokens: server.tokens,
       })),
@@ -245,6 +250,8 @@ export function findLevers(
       .filter((group) => group.source.startsWith('plugin ') && group.uses === 0 && group.tokens > 0)
       .map((group) => ({
         key: `skills-${group.source}`,
+        kind: 'plugin' as const,
+        target: group.source.slice('plugin '.length),
         text: `Disable plugin ${code(group.source.slice('plugin '.length))} (${plural(group.skills, 'skill')}, none used)`,
         tokens: group.tokens,
       })),
@@ -252,6 +259,8 @@ export function findLevers(
       .filter((file) => file.tokens >= LARGE_INSTRUCTION_FILE)
       .map((file) => ({
         key: `file-${file.path}`,
+        kind: 'file' as const,
+        target: file.path,
         text: `Trim ${code(shortPath(file.path))} or move rarely needed parts into a skill (it loads every turn)`,
         tokens: file.tokens,
       })),
@@ -694,4 +703,51 @@ export function formatJson(loadout: Loadout, since: LoadoutDiff | 'first' | unde
     idle: loadout.idle,
     sinceLastSession: since === undefined ? null : since === 'first' ? { isFirst: true } : since,
   }, null, 2)
+}
+
+/** How to pull one lever, as Markdown lines under its numbered step. */
+function leverSteps(lever: Lever): string[] {
+  if (lever.kind === 'plugin') {
+    return [
+      '   ```sh',
+      `   claude plugin disable ${lever.target} --scope local`,
+      '   ```',
+      `   Only this project. Undo with \`claude plugin enable ${lever.target} --scope local\`.`,
+    ]
+  }
+  if (lever.kind === 'mcp') {
+    return [`   Run \`/mcp\`, pick \`${lever.target}\` and choose **Disable**. It stays configured, and you can enable it again there.`]
+  }
+  return [`   Open \`${lever.target}\` and move the sections you rarely need into a skill, which loads only when used.`]
+}
+
+/**
+ * Markdown for `/inspector trim`: every lever as a step with the command that
+ * pulls it, a running total, and where that leaves the loadout against the budget.
+ */
+export function formatTrimPlan(loadout: Loadout, budget?: number): string {
+  const tokens = (count: number) => count.toLocaleString('en-US')
+  const base = baseTokensOf(loadout)
+  const levers = findLevers(loadout.mcpServers, loadout.skillGroups, loadout.memoryFiles, 10)
+  const lines = ['## Trim plan', '', `Loaded before any message: **${tokens(base)} tokens**${budget ? ` (budget ${tokens(budget)})` : ''}.`, '']
+  if (levers.length === 0) {
+    lines.push('Nothing to trim: every loaded MCP server and plugin has been used in this session, and no instruction file is large.')
+    return lines.join('\n')
+  }
+  let freed = 0
+  let reachedBudget = 0
+  levers.forEach((lever, index) => {
+    freed += lever.tokens
+    if (budget && !reachedBudget && base - freed <= budget) reachedBudget = index + 1
+    lines.push(`${index + 1}. ${lever.text}: frees ~${tokens(lever.tokens)} (total ~${tokens(freed)})`, ...leverSteps(lever), '')
+  })
+  const after = base - freed
+  lines.push(`**All ${levers.length} steps:** ${tokens(base)} to ~${tokens(after)} tokens (-${Math.round((freed / Math.max(base, 1)) * 100)}%).`)
+  if (budget) {
+    if (base <= budget) lines.push('', 'Already within budget; these steps only add headroom.')
+    else if (reachedBudget) lines.push('', `The first ${reachedBudget === 1 ? 'step brings' : `${reachedBudget} steps bring`} the loadout within budget.`)
+    else lines.push('', `Still ~${tokens(after - budget)} over budget after every step: look at System tools and Skills in \`/inspector report\`.`)
+  }
+  lines.push('', '_"Unused" means no calls in this session so far. Measure after real work, not at startup._')
+  return lines.join('\n')
 }

@@ -276,3 +276,14 @@ test('/inspector history shows the trend including this session', async ($, on) 
   expect(text).toContain('over the last 2 sessions')
   expect(text).toContain('(this session) | claude-opus-5-5 | 27,400 | +3,400 |')
 })
+
+test('/inspector trim prints a plan with commands', async ($, on) => {
+  mockSession(on, [], undefined, { CLAUDE_INSPECTOR_STARTUP_CHECK: '0', CLAUDE_INSPECTOR_BUDGET: '25k' })
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
+
+  const { text } = await $.command.run({ command: 'inspector', args: 'trim' }) as { text: string }
+  expect(text).toContain('## Trim plan')
+  expect(text).toContain('claude plugin disable ops --scope local')
+  expect(text).toContain('pick `linear` and choose **Disable**')
+  expect(text).toContain('within budget')
+})

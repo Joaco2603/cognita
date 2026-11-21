@@ -11,6 +11,7 @@ import {
   formatHistory,
   formatJson,
   formatReport,
+  formatTrimPlan,
   mcpServerOf,
   measurePrompt,
   parseTokens,
@@ -349,4 +350,35 @@ test('formatHistory lists sessions newest first with the change and the budget',
   assert.equal(rows[0], '| 2026-11-21 08:00 UTC (this session) | claude-opus-5-5 | 24,500 | -1,500 |')
   assert.equal(rows[2], '| 2026-11-19 08:00 UTC | claude-opus-5-5 | 20,000 |  |')
   assert.equal(formatHistory([]), 'No measurements saved for this project yet.')
+})
+
+test('the trim plan gives each lever a command, a running total and the budget outcome', () => {
+  const usage = emptyUsage()
+  const loadout = summarize(breakdown, usage)
+  const plan = formatTrimPlan(loadout, 17000)
+  const steps = plan.split('\n').filter((line) => /^\d+\. /.test(line))
+  assert.ok(steps.length >= 1)
+  assert.ok(plan.startsWith('## Trim plan'))
+  assert.ok(plan.includes('Loaded before any message: **18,000 tokens** (budget 17,000).'))
+  assert.ok(plan.includes('**All '))
+  for (const lever of loadout.levers) {
+    if (lever.kind === 'plugin') assert.ok(plan.includes(`claude plugin disable ${lever.target} --scope local`))
+    if (lever.kind === 'mcp') assert.ok(plan.includes(`pick \`${lever.target}\` and choose **Disable**`))
+  }
+  assert.ok(formatTrimPlan(loadout, 50000).includes('Already within budget'))
+})
+
+test('levers say what they act on', () => {
+  const levers = findLevers(
+    [{ server: 'db', tools: 2, loadedTools: 2, tokens: 900, calls: 0 }],
+    [{ source: 'plugin ops', skills: 3, tokens: 600, uses: 0 }],
+    [{ path: '/repo/CLAUDE.md', tokens: 2500 }],
+  )
+  assert.deepEqual(levers.map((lever) => [lever.kind, lever.target]), [
+    ['file', '/repo/CLAUDE.md'],
+    ['mcp', 'db'],
+    ['plugin', 'ops'],
+  ])
+  const plan = formatTrimPlan({ ...summarize(breakdown, emptyUsage()), mcpServers: [], skillGroups: [], memoryFiles: [] })
+  assert.ok(plan.includes('Nothing to trim'))
 })
