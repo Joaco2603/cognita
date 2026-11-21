@@ -1,0 +1,9 @@
+{
+  "name": "workspace-dashboard",
+  "displayName": "Workspace Dashboard",
+  "version": "0.1.0",
+  "description": "An in-session workspace and agents dashboard for Claude Code.",
+  "author": {
+    "name": "Joaquin Pappa"
+  }
+}
