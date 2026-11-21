@@ -7,6 +7,7 @@ Monorepo del proyecto construido durante el hackathon.
 - [`claude-code-tui/`](./claude-code-tui) - plugin de Claude Code con dashboards interactivos para terminal.
 - [`graphify-out/`](./graphify-out) - grafo y reportes generados del código fuente.
 - [`skills/`](./skills) - skills locales del proyecto.
+- [`HACKATHON.md`](./HACKATHON.md) - contexto del hackathon, criterios, línea base y checklist de entrega.
 
 ## Claude Code TUI
 
