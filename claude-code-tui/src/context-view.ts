@@ -5,6 +5,8 @@ import {
   share,
   shortPath,
   type Loadout,
+  type LoadoutChange,
+  type LoadoutDiff,
   type PromptCapture,
 } from './loadout.js'
 import { formatTokenCount, formatTokensShort, slug, type ContextSubview } from './utils.js'
@@ -17,6 +19,7 @@ const MAX_ROWS = 12
 
 export function renderContext(ui: UiComponents, options: {
   loadout?: Loadout
+  since?: LoadoutDiff | 'first'
   prompt?: PromptCapture
   subview: ContextSubview
   measuredAt: string
@@ -43,6 +46,38 @@ export function renderContext(ui: UiComponents, options: {
   const heading = (text: string) => Text({ children: [text], dimColor: true, bold: true })
   const more = (count: number) =>
     count > MAX_ROWS ? Text({ children: [`… ${count - MAX_ROWS} more (see /inspector report)`], dimColor: true }) : null
+
+  const changeLabel = (change: LoadoutChange) => {
+    const kind = { category: '', mcp: 'MCP · ', skills: 'skills · ', file: 'file · ' }[change.kind]
+    const name = change.kind === 'file' ? shortPath(change.name) : change.name
+    const state = change.before === 0 ? ' (new)' : change.after === 0 ? ' (gone)' : ''
+    return `${kind}${name}${state}`
+  }
+
+  const sinceLastSession = (since: LoadoutDiff | 'first' | undefined): unknown[] => {
+    if (since === undefined) return []
+    if (since === 'first') {
+      return [
+        heading('SINCE LAST SESSION'),
+        Box({ key: 'context-since-first', children: [Text({ children: ['First measurement here: the next session will be compared with this one.'], dimColor: true })] }),
+      ]
+    }
+    const delta = since.baseAfter - since.baseBefore
+    const signed = (tokens: number) => `${tokens > 0 ? '+' : tokens < 0 ? '-' : '±'}${formatTokensShort(Math.abs(tokens))}`
+    return [
+      heading('SINCE LAST SESSION'),
+      Box({
+        key: 'context-since-total',
+        children: [Text({
+          children: [`Loaded before any message: ${formatTokensShort(since.baseAfter)} (${signed(delta)})${since.model ? ` · model ${since.model.before} → ${since.model.after}` : ''}`],
+          color: delta > 0 ? WARN : undefined,
+          dimColor: delta <= 0,
+        })],
+      }),
+      ...since.changes.slice(0, 4).map((change) =>
+        row(`context-change-${change.kind}-${slug(change.name)}`, changeLabel(change), signed(change.delta), undefined, change.delta > 0 ? WARN : undefined)),
+    ]
+  }
 
   const menuButton = (subview: ContextSubview, label: string, hotkey: string) =>
     Button({
@@ -247,6 +282,7 @@ export function renderContext(ui: UiComponents, options: {
           : null,
         ...loadout.levers.slice(0, 3).map((lever) =>
           row(`context-lever-${slug(lever.key)}`, lever.text.replaceAll('`', ''), `-${formatTokensShort(lever.tokens)}`, undefined, WARN)),
+        ...sinceLastSession(options.since),
         heading('LOADED BUT UNUSED THIS SESSION'),
         loadout.idle.length === 0
           ? Box({ key: 'context-idle-none', children: [Text({ children: ['Everything loaded has been used at least once.'], dimColor: true })] })

@@ -19,6 +19,36 @@ export function renderContext(ui, options) {
     });
     const heading = (text) => Text({ children: [text], dimColor: true, bold: true });
     const more = (count) => count > MAX_ROWS ? Text({ children: [`… ${count - MAX_ROWS} more (see /inspector report)`], dimColor: true }) : null;
+    const changeLabel = (change) => {
+        const kind = { category: '', mcp: 'MCP · ', skills: 'skills · ', file: 'file · ' }[change.kind];
+        const name = change.kind === 'file' ? shortPath(change.name) : change.name;
+        const state = change.before === 0 ? ' (new)' : change.after === 0 ? ' (gone)' : '';
+        return `${kind}${name}${state}`;
+    };
+    const sinceLastSession = (since) => {
+        if (since === undefined)
+            return [];
+        if (since === 'first') {
+            return [
+                heading('SINCE LAST SESSION'),
+                Box({ key: 'context-since-first', children: [Text({ children: ['First measurement here: the next session will be compared with this one.'], dimColor: true })] }),
+            ];
+        }
+        const delta = since.baseAfter - since.baseBefore;
+        const signed = (tokens) => `${tokens > 0 ? '+' : tokens < 0 ? '-' : '±'}${formatTokensShort(Math.abs(tokens))}`;
+        return [
+            heading('SINCE LAST SESSION'),
+            Box({
+                key: 'context-since-total',
+                children: [Text({
+                        children: [`Loaded before any message: ${formatTokensShort(since.baseAfter)} (${signed(delta)})${since.model ? ` · model ${since.model.before} → ${since.model.after}` : ''}`],
+                        color: delta > 0 ? WARN : undefined,
+                        dimColor: delta <= 0,
+                    })],
+            }),
+            ...since.changes.slice(0, 4).map((change) => row(`context-change-${change.kind}-${slug(change.name)}`, changeLabel(change), signed(change.delta), undefined, change.delta > 0 ? WARN : undefined)),
+        ];
+    };
     const menuButton = (subview, label, hotkey) => Button({
         key: `context-menu-${subview}`,
         label: `${options.subview === subview ? '▸ ' : '  '}${label}`,
@@ -178,6 +208,7 @@ export function renderContext(ui, options) {
                     ? Text({ children: ['Nothing stands out yet.'], dimColor: true })
                     : null,
                 ...loadout.levers.slice(0, 3).map((lever) => row(`context-lever-${slug(lever.key)}`, lever.text.replaceAll('`', ''), `-${formatTokensShort(lever.tokens)}`, undefined, WARN)),
+                ...sinceLastSession(options.since),
                 heading('LOADED BUT UNUSED THIS SESSION'),
                 loadout.idle.length === 0
                     ? Box({ key: 'context-idle-none', children: [Text({ children: ['Everything loaded has been used at least once.'], dimColor: true })] })

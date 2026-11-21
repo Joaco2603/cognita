@@ -302,7 +302,12 @@ function table(headers: string[], rows: string[][]): string[] {
 export const REPORT_ROWS = 15
 
 /** Markdown report for `/inspector report`: paste-able into an issue or PR. */
-export function formatReport(loadout: Loadout, prompt: PromptCapture | undefined, usage: UsageLog): string {
+export function formatReport(
+  loadout: Loadout,
+  prompt: PromptCapture | undefined,
+  usage: UsageLog,
+  since?: LoadoutDiff | 'first',
+): string {
   const tokens = formatTokenCount
   const lines: string[] = [
     '## Session loadout',
@@ -314,6 +319,7 @@ export function formatReport(loadout: Loadout, prompt: PromptCapture | undefined
     ...(loadout.levers.length === 0
       ? ['Nothing stands out: every loaded MCP server and plugin has been used, and no instruction file is large.']
       : loadout.levers.map((lever) => `- ${lever.text}: frees ~${tokens(lever.tokens)} tokens`)),
+    ...(since === undefined ? [] : ['', '### Since last session', '', ...formatDiff(since === 'first' ? undefined : since)]),
     '',
     '### Context window',
     '',
@@ -407,4 +413,132 @@ export function formatReport(loadout: Loadout, prompt: PromptCapture | undefined
 export function shortPath(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean)
   return parts.length <= 2 ? path : `…/${parts.slice(-2).join('/')}` || basename(path)
+}
+
+/** What a session loads before any message, kept across sessions to compare against. */
+export type LoadoutSnapshot = {
+  shape: 'loadout-1'
+  sessionId: string
+  at: string
+  model: string
+  /** Tokens loaded before any conversation: every category but Messages. */
+  baseTokens: number
+  /** `category:<name>`, `mcp:<server>`, `skills:<source>`, `file:<path>` to tokens. */
+  items: Record<string, number>
+}
+
+/** The store's record for one project: this session's snapshot and the one before. */
+export type LoadoutHistory = {
+  current: LoadoutSnapshot
+  previous?: LoadoutSnapshot
+}
+
+export type LoadoutChange = {
+  kind: 'category' | 'mcp' | 'skills' | 'file'
+  name: string
+  before: number
+  after: number
+  delta: number
+}
+
+export type LoadoutDiff = {
+  since: string
+  model?: { before: string; after: string }
+  baseBefore: number
+  baseAfter: number
+  changes: LoadoutChange[]
+}
+
+/** Changes smaller than this are noise between two measurements. */
+export const MIN_CHANGE_TOKENS = 50
+
+const isConversation = (name: string) => /^messages$/i.test(name)
+
+export function toSnapshot(loadout: Loadout, sessionId: string, at = new Date().toISOString()): LoadoutSnapshot {
+  const items: Record<string, number> = {}
+  for (const category of loadout.categories) {
+    if (!isConversation(category.name)) items[`category:${category.name}`] = category.tokens
+  }
+  for (const server of loadout.mcpServers) items[`mcp:${server.server}`] = server.tokens
+  for (const group of loadout.skillGroups) items[`skills:${group.source}`] = group.tokens
+  for (const file of loadout.memoryFiles) items[`file:${file.path}`] = file.tokens
+  return {
+    shape: 'loadout-1',
+    sessionId,
+    at,
+    model: loadout.model,
+    baseTokens: loadout.categories.filter((category) => !isConversation(category.name)).reduce((total, category) => total + category.tokens, 0),
+    items,
+  }
+}
+
+function isSnapshot(value: unknown): value is LoadoutSnapshot {
+  const snapshot = value as LoadoutSnapshot | undefined
+  return snapshot?.shape === 'loadout-1' && typeof snapshot.sessionId === 'string' && typeof snapshot.items === 'object' && snapshot.items !== null
+}
+
+/**
+ * Folds this session's snapshot into what the store holds for the project.
+ * The baseline is the last snapshot of another session, so measuring twice,
+ * or reloading the plugin, never compares a session with itself.
+ */
+export function rememberSnapshot(stored: unknown, snapshot: LoadoutSnapshot): { history: LoadoutHistory; baseline?: LoadoutSnapshot } {
+  const history = stored as Partial<LoadoutHistory> | undefined
+  const current = isSnapshot(history?.current) ? history.current : undefined
+  const previous = isSnapshot(history?.previous) ? history.previous : undefined
+  const baseline = current && current.sessionId !== snapshot.sessionId ? current : previous
+  return { history: { current: snapshot, previous: baseline }, baseline }
+}
+
+export function diffLoadout(before: LoadoutSnapshot, after: LoadoutSnapshot): LoadoutDiff {
+  const changes: LoadoutChange[] = []
+  for (const id of new Set([...Object.keys(before.items), ...Object.keys(after.items)])) {
+    const was = before.items[id] ?? 0
+    const now = after.items[id] ?? 0
+    if (Math.abs(now - was) < MIN_CHANGE_TOKENS) continue
+    const split = id.indexOf(':')
+    changes.push({ kind: id.slice(0, split) as LoadoutChange['kind'], name: id.slice(split + 1), before: was, after: now, delta: now - was })
+  }
+  changes.sort((left, right) => Math.abs(right.delta) - Math.abs(left.delta))
+  return {
+    since: before.at,
+    model: before.model === after.model ? undefined : { before: before.model, after: after.model },
+    baseBefore: before.baseTokens,
+    baseAfter: after.baseTokens,
+    changes,
+  }
+}
+
+const CHANGE_LABEL: Record<LoadoutChange['kind'], string> = {
+  category: 'Category',
+  mcp: 'MCP server',
+  skills: 'Skills from',
+  file: 'File',
+}
+
+/** One line for a change: `MCP server linear: added, 3,000 tokens`. */
+export function describeChange(change: LoadoutChange): string {
+  const tokens = formatTokenCount
+  const name = change.kind === 'file' ? shortPath(change.name) : change.name
+  const what = change.before === 0
+    ? `added, ${tokens(change.after)} tokens`
+    : change.after === 0
+      ? `removed, was ${tokens(change.before)} tokens`
+      : `${change.delta > 0 ? '+' : '-'}${tokens(Math.abs(change.delta))} tokens (${tokens(change.before)} → ${tokens(change.after)})`
+  return `${CHANGE_LABEL[change.kind]} ${name}: ${what}`
+}
+
+/** Markdown lines for the report's comparison section. */
+export function formatDiff(diff: LoadoutDiff | undefined): string[] {
+  if (!diff) return ['First measurement in this project: the next session will be compared with this one.']
+  const tokens = formatTokenCount
+  const delta = diff.baseAfter - diff.baseBefore
+  const lines = [
+    `Loaded before any message: ${tokens(diff.baseAfter)} tokens, ${delta === 0 ? 'unchanged' : `${delta > 0 ? '+' : '-'}${tokens(Math.abs(delta))}`} since ${diff.since.slice(0, 16).replace('T', ' ')} UTC.`,
+  ]
+  if (diff.model) lines.push('', `Model changed: \`${diff.model.before}\` → \`${diff.model.after}\`.`)
+  lines.push('', ...(diff.changes.length === 0
+    ? ['No change of 50 tokens or more.']
+    : diff.changes.slice(0, REPORT_ROWS).map((change) => `- ${describeChange(change)}`)))
+  return lines
 }

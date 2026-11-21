@@ -1,7 +1,7 @@
 import { renderAgents } from './agents-view.js';
 import { renderContext } from './context-view.js';
 import { renderDashboard, renderSidebar } from './dashboard-view.js';
-import { emptyUsage, formatReport, measurePrompt, recordSkillUse, recordToolCall, summarize, } from './loadout.js';
+import { diffLoadout, emptyUsage, formatReport, measurePrompt, recordSkillUse, recordToolCall, rememberSnapshot, summarize, toSnapshot, } from './loadout.js';
 import { basename, dirname, joinPath, } from './utils.js';
 const PANE_ID = 'workspace-dashboard';
 const COMMAND_NAME = 'inspector';
@@ -40,6 +40,8 @@ export function register(on) {
     let measuredAt = '';
     let measuring = false;
     let contextError = '';
+    /** The comparison with this project's previous session; undefined until known. */
+    let since;
     let promptSections = [];
     let promptBlocks = [];
     let instructionFiles = [];
@@ -47,10 +49,11 @@ export function register(on) {
         ? measurePrompt(promptSections, promptBlocks, instructionFiles)
         : undefined;
     const applyLoadout = (measured, detail) => {
-        loadout = measured;
+        loadout = measured.loadout;
+        since = measured.since ?? since;
         loadoutDetail = detail;
         measuredAt = new Date().toLocaleTimeString();
-        return measured;
+        return measured.loadout;
     };
     on('session.start', async ($, event, next) => {
         await $.command.register({
@@ -69,7 +72,7 @@ export function register(on) {
         if (subcommand === 'report') {
             try {
                 const detail = option === 'full' ? 'full' : 'summary';
-                return { text: formatReport(applyLoadout(await readLoadout($, detail, usageLog), detail), promptCapture(), usageLog) };
+                return { text: formatReport(applyLoadout(await readLoadout($, detail, usageLog, currentDirectory), detail), promptCapture(), usageLog, since) };
             }
             catch {
                 return { text: 'Could not measure the context window for this session.' };
@@ -78,7 +81,7 @@ export function register(on) {
         if (subcommand === 'context') {
             activeTab = 'context';
             if (!loadout)
-                void readLoadout($, 'summary', usageLog).then((measured) => {
+                void readLoadout($, 'summary', usageLog, currentDirectory).then((measured) => {
                     applyLoadout(measured, 'summary');
                     $.ui.invalidate('ui.render');
                 }, () => undefined);
@@ -156,7 +159,7 @@ export function register(on) {
             contextError = '';
             redraw();
             try {
-                applyLoadout(await readLoadout($, detail, usageLog), detail);
+                applyLoadout(await readLoadout($, detail, usageLog, currentDirectory), detail);
             }
             catch {
                 contextError = 'Could not measure the context window for this session.';
@@ -171,7 +174,7 @@ export function register(on) {
             const [agentResult, contextResult] = await Promise.allSettled([
                 $.agent.list(),
                 $.command.run({ command: 'context' }),
-                readLoadout($, 'summary', usageLog).then((measured) => applyLoadout(measured, 'summary')),
+                readLoadout($, 'summary', usageLog, currentDirectory).then((measured) => applyLoadout(measured, 'summary')),
             ]);
             if (agentResult.status === 'fulfilled')
                 sessionAgents = agentResult.value;
@@ -276,6 +279,7 @@ export function register(on) {
         else if (activeTab === 'context') {
             content = renderContext(ui, {
                 loadout,
+                since,
                 prompt: promptCapture(),
                 subview: contextSubview,
                 measuredAt,
@@ -363,12 +367,31 @@ export function register(on) {
     });
 }
 /** Measures the context window and joins it with what the session has used. */
-async function readLoadout($, detail, usageLog) {
+async function readLoadout($, detail, usageLog, cwd) {
     const usage = await $.session.usage({ breakdown: detail, columns: 80 });
     const breakdown = usage.context.breakdown;
     if (!breakdown)
         throw new Error('Claude Code returned no context breakdown.');
-    return summarize(breakdown, usageLog);
+    const loadout = summarize(breakdown, usageLog);
+    return { loadout, since: await compareWithLastSession($, cwd, loadout) };
+}
+/**
+ * Saves this measurement for the project and compares it with the last one
+ * another session saved. Best effort: a store failure only loses the comparison.
+ */
+async function compareWithLastSession($, cwd, loadout) {
+    if (!cwd)
+        return undefined;
+    try {
+        const key = `history:${cwd}`;
+        const snapshot = toSnapshot(loadout, await $.session.id());
+        const { history, baseline } = rememberSnapshot(await $.store.get(key), snapshot);
+        await $.store.set(key, history);
+        return baseline ? diffLoadout(baseline, snapshot) : 'first';
+    }
+    catch {
+        return undefined;
+    }
 }
 /**
  * Lists sibling projects to pick from: CLAUDE_CODE_WORKSPACES_DIR when set,

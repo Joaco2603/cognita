@@ -140,6 +140,11 @@ Registrarlo en la sección siguiente para la entrega.
   - Nueva sección "Biggest levers": acciones concretas ordenadas por ahorro. Ejemplo real: "Disable plugin `cloudflare` (16 skills, none used): frees ~1,080 tokens".
   - Skills agrupadas por origen (plugin o settings); el reporte limita las listas largas a 15 filas y conserva los totales.
   - Tests: 19 de UI y 16 unitarios, todos en verde.
+- **2026-11-21 · "Since last session" (v0.3.0).**
+  - Cada medición se guarda por proyecto en `$.store`; la siguiente sesión muestra qué cambió en lo que se carga antes del primer mensaje (MCP servers, skills por origen, archivos de instrucciones, categorías, modelo).
+  - Probado en sesiones reales: la segunda sesión reporta "unchanged"; con `--strict-mcp-config` reporta "-3,377" y los servidores MCP que desaparecieron.
+  - Aparece en `/inspector report` y en el panel ("SINCE LAST SESSION").
+  - Tests: 22 de UI y 19 unitarios, todos en verde.
 
 ## Checklist de entrega
 

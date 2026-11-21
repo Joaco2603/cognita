@@ -4,6 +4,7 @@ A Claude Code plugin that shows **what your session has loaded into the context 
 
 - **Context loadout.** A live meter of the window, the categories filling it (system prompt, tools, MCP tools, memory files, skills, messages), each CLAUDE.md/memory file, each MCP server, each skill and each custom agent, with its token cost.
 - **Biggest levers.** The few changes that would free the most context, with their saving: idle MCP servers, plugins whose skills never ran, and CLAUDE.md files of 2,000 tokens or more. Savings under 200 tokens are left out.
+- **Since last session.** Each measurement is saved per project, so the next session shows what changed: `MCP server linear: added, 3,000 tokens`, a plugin's skills growing, a CLAUDE.md that doubled, a model switch. Catch context creep before it costs you.
 - **Loaded but unused.** The plugin watches tool calls and skill use in the session and lists the MCP servers and skills that cost tokens but were never used. These are the first candidates to disable for the project.
 - **System prompt sections.** See every section of the last composed system prompt, including the ones *other plugins* inject (`<plugin>:<name>` ids), with approximate token sizes.
 - **Shareable report.** `/inspector report` prints the loadout as Markdown that you can paste into an issue, a PR or a team channel.
@@ -56,6 +57,7 @@ Hotkeys in the pane:
 - **MCP rows.** These read `server  loaded/total · N calls`. Deferred tools (not loaded yet) don't count against the window. `N calls` counts the calls made since the plugin loaded.
 - **Deferred.** Tools listed as deferred are outside the window until ToolSearch loads them. They show on a separate line rather than as part of how full the window is.
 - **Skills by source.** The Skills subview and the report group skills by plugin or settings source, so one noisy plugin stands out.
+- **Since last session.** The baseline is the last measurement saved by *another* session in the same folder, so measuring twice in one session never compares a session with itself. Only changes of 50 tokens or more are listed, and the conversation (Messages) is left out, so the number means "what loads before you type".
 - **Loaded but unused.** This covers loaded MCP servers with zero calls and skills with zero invocations, sorted by token cost. It is a hint, not a verdict: a skill can be worth listing even if this session did not use it.
 - **Prompt subview.** This view fills in after the first prompt that is composed while the plugin is loaded.
 

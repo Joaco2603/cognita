@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 const pane = {
   plugin: 'workspace-dashboard',
@@ -61,6 +61,7 @@ const breakdown = {
 function mockSession(on: any, requested: string[] = [], opened?: string[]) {
   on('env.get', () => ({ value: undefined }))
   on('fs.list', () => ({ value: [] }))
+  on('session.id', () => ({ value: 'this-session' }))
   on('session.start', () => ({ cwd: '/workspace' }))
   on('command.register', () => ({ value: undefined }))
   on('ui.open', (_$: any, event: any) => {
@@ -179,4 +180,55 @@ test('/inspector help lists the subcommands', async ($, on) => {
 
   const { text } = await $.command.run({ command: 'inspector', args: 'help' }) as { text: string }
   expect(text).toContain('/inspector report full')
+})
+
+const lastSession = {
+  'history:/workspace': {
+    current: {
+      shape: 'loadout-1',
+      sessionId: 'an-earlier-session',
+      at: '2026-11-20T09:30:00.000Z',
+      model: 'claude-opus-5-5',
+      baseTokens: 24000,
+      items: {
+        'category:System tools': 12000,
+        'category:MCP tools': 6000,
+        'mcp:github': 6000,
+        'mcp:slack': 2500,
+        'skills:userSettings': 500,
+        'skills:plugin ops': 400,
+        'file:/workspace/CLAUDE.md': 1800,
+      },
+    },
+  },
+}
+
+test('the Context tab compares the loadout with the last session in this project', async ($, on) => {
+  mock.store(on, lastSession)
+  const ui = await openContext($, on)
+
+  expect(await ui.find({ key: 'context-since-total' })).toBeDefined()
+  expect(await ui.find({ key: 'context-change-mcp-linear' })).toBeDefined()
+  expect(await ui.find({ key: 'context-change-mcp-slack' })).toBeDefined()
+  expect(await ui.find({ key: 'context-change-category-mcp-tools' })).toBeDefined()
+  expect(await ui.find({ key: 'context-change-mcp-github' })).toBeUndefined()
+})
+
+test('/inspector report says what changed since the last session, or that it is the first', async ($, on) => {
+  mock.store(on, lastSession)
+  mockSession(on)
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
+
+  const { text } = await $.command.run({ command: 'inspector', args: 'report' }) as { text: string }
+  expect(text).toContain('### Since last session')
+  expect(text).toContain('MCP server linear: added, 3,000 tokens')
+  expect(text).toContain('MCP server slack: removed, was 2,500 tokens')
+  expect(text).toContain('since 2026-11-20 09:30 UTC')
+})
+
+test('the first measurement in a project says the next session will be compared', async ($, on) => {
+  mock.store(on)
+  const ui = await openContext($, on)
+
+  expect(await ui.find({ key: 'context-since-first' })).toBeDefined()
 })
