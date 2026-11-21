@@ -2,20 +2,25 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  baseTokensOf,
   describeChange,
   diffLoadout,
   emptyUsage,
   estimateTokens,
   findLevers,
+  formatJson,
   formatReport,
   mcpServerOf,
   measurePrompt,
+  parseTokens,
   meter,
   pluginSections,
   recordSkillUse,
   recordToolCall,
   rememberSnapshot,
   share,
+  sinceBadge,
+  startupAlert,
   summarize,
   toSnapshot,
 } from '../hooks/loadout.js'
@@ -245,4 +250,62 @@ test('diffLoadout lists added, removed and grown items, biggest first, ignoring 
   assert.ok(report.includes('### Since last session'))
   assert.ok(report.includes('Loaded before any message: 13,000 tokens, +3,000 since 2026-11-20 10:00 UTC.'))
   assert.ok(!formatReport(summarize(breakdown, emptyUsage()), undefined, emptyUsage()).includes('Since last session'))
+})
+
+test('parseTokens reads plain, k and M amounts and rejects the rest', () => {
+  assert.equal(parseTokens('30000'), 30000)
+  assert.equal(parseTokens('30k'), 30000)
+  assert.equal(parseTokens(' 1.5M '), 1500000)
+  assert.equal(parseTokens('30,000'), 30000)
+  assert.equal(parseTokens('0'), 0)
+  assert.equal(parseTokens('lots'), undefined)
+  assert.equal(parseTokens(undefined), undefined)
+})
+
+const grown = {
+  since: '2026-11-20T10:00:00.000Z',
+  baseBefore: 15000,
+  baseAfter: 18000,
+  changes: [
+    { kind: 'mcp', name: 'db', before: 0, after: 2000, delta: 2000 },
+    { kind: 'skills', name: 'userSettings', before: 100, after: 1100, delta: 1000 },
+  ],
+}
+
+test('startupAlert warns on growth, names the cause, and prefers the budget', () => {
+  const loadout = summarize(breakdown, emptyUsage())
+  assert.equal(baseTokensOf(loadout), 18000)
+  assert.equal(
+    startupAlert(loadout, grown, { growth: 2000 }),
+    'Context loadout grew +3.0k since last session, mostly MCP server db (new). Run /inspector report for details.',
+  )
+  assert.equal(startupAlert(loadout, grown, { growth: 5000 }), undefined)
+  assert.equal(startupAlert(loadout, grown, { growth: 0 }), undefined)
+  assert.equal(startupAlert(loadout, 'first', { growth: 2000 }), undefined)
+  assert.ok(startupAlert(loadout, 'first', { growth: 2000, budget: 10000 }).startsWith('Context loadout 18k is over your 10k budget. '))
+  assert.ok(startupAlert(loadout, grown, { growth: 2000, budget: 10000 }).includes('over your 10k budget (+3.0k since last session, mostly MCP server db (new))'))
+  assert.equal(startupAlert(loadout, grown, { growth: 9000, budget: 20000 }), undefined)
+})
+
+test('sinceBadge is short and stays quiet for small or unknown changes', () => {
+  assert.equal(sinceBadge(grown), '+3.0k vs last')
+  assert.equal(sinceBadge({ ...grown, baseAfter: 15020 }), '')
+  assert.equal(sinceBadge('first'), '')
+  assert.equal(sinceBadge(undefined), '')
+})
+
+test('the JSON report carries the loadout, the budget and the comparison', () => {
+  const data = JSON.parse(formatJson(summarize(breakdown, emptyUsage()), grown, { growth: 2000, budget: 10000 }))
+  assert.equal(data.shape, 'inspector-report-1')
+  assert.equal(data.baseTokens, 18000)
+  assert.deepEqual(data.budget, { tokens: 10000, isOver: true })
+  assert.equal(data.mcpServers[0].server, 'gh')
+  assert.equal(data.sinceLastSession.changes[0].name, 'db')
+  assert.equal(JSON.parse(formatJson(summarize(breakdown, emptyUsage()), 'first', { growth: 0 })).sinceLastSession.isFirst, true)
+})
+
+test('the report states the budget when one is set', () => {
+  const loadout = summarize(breakdown, emptyUsage())
+  assert.ok(formatReport(loadout, undefined, emptyUsage(), undefined, 10000).includes('**Over budget:** 18,000 tokens load before any message, 8,000 over the 10,000 budget.'))
+  assert.ok(formatReport(loadout, undefined, emptyUsage(), undefined, 30000).includes('Within budget: 18,000 of 30,000 tokens'))
 })

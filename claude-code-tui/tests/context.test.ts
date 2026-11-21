@@ -58,8 +58,8 @@ const breakdown = {
   apiUsage: null,
 }
 
-function mockSession(on: any, requested: string[] = [], opened?: string[]) {
-  on('env.get', () => ({ value: undefined }))
+function mockSession(on: any, requested: string[] = [], opened?: string[], env: Record<string, string> = {}) {
+  on('env.get', (_$: any, event: any) => ({ value: env[event.name] }))
   on('fs.list', () => ({ value: [] }))
   on('session.id', () => ({ value: 'this-session' }))
   on('session.start', () => ({ cwd: '/workspace' }))
@@ -231,4 +231,32 @@ test('the first measurement in a project says the next session will be compared'
   const ui = await openContext($, on)
 
   expect(await ui.find({ key: 'context-since-first' })).toBeDefined()
+})
+
+test('a session start measures in the background and warns when the loadout grew', async ($, on) => {
+  const toasts: string[] = []
+  mock.store(on, lastSession)
+  mockSession(on)
+  on('ui.toast', (_$: any, event: any) => {
+    toasts.push(String(event.text ?? event.message ?? event))
+    return { value: undefined }
+  })
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
+  // The check runs in the background, after the session has started.
+  await new Promise((resolve) => setTimeout(resolve, 50))
+
+  expect(toasts.length).toBe(1)
+  expect(toasts[0]).toContain('grew +3.4k since last session, mostly MCP server linear (new)')
+})
+
+test('/inspector report json prints machine-readable data', async ($, on) => {
+  mock.store(on)
+  mockSession(on, [], undefined, { CLAUDE_INSPECTOR_BUDGET: '20k', CLAUDE_INSPECTOR_STARTUP_CHECK: '0' })
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
+
+  const { text } = await $.command.run({ command: 'inspector', args: 'report json' }) as { text: string }
+  const data = JSON.parse(text.replace(/^```json\n/, '').replace(/\n```$/, ''))
+  expect(data.baseTokens).toBe(27400)
+  expect(data.budget).toEqual({ tokens: 20000, isOver: true })
+  expect(data.sinceLastSession).toEqual({ isFirst: true })
 })

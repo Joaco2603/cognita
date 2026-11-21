@@ -145,6 +145,12 @@ Registrarlo en la sección siguiente para la entrega.
   - Probado en sesiones reales: la segunda sesión reporta "unchanged"; con `--strict-mcp-config` reporta "-3,377" y los servidores MCP que desaparecieron.
   - Aparece en `/inspector report` y en el panel ("SINCE LAST SESSION").
   - Tests: 22 de UI y 19 unitarios, todos en verde.
+- **2026-11-21 · Alertas al iniciar, presupuesto y reporte JSON (v0.4.0).**
+  - Al iniciar una sesión interactiva se mide el loadout en segundo plano; un toast avisa si creció 2,000 tokens o más (configurable) o si supera el presupuesto, y nombra la causa principal ("mostly MCP server linear (new)").
+  - `CLAUDE_INSPECTOR_BUDGET` (acepta `30k`, `1.5M`): el reporte dice si lo que carga antes del primer mensaje cabe en el presupuesto.
+  - La status line muestra el cambio contra la sesión anterior (`+3.4k vs last`).
+  - `/inspector report json` para scripts y CI. Probado en una sesión real: baseTokens 33,828 contra un presupuesto de 20k.
+  - Tests: 24 de UI y 24 unitarios, todos en verde.
 
 ## Checklist de entrega
 
