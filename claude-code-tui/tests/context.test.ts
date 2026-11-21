@@ -260,3 +260,19 @@ test('/inspector report json prints machine-readable data', async ($, on) => {
   expect(data.budget).toEqual({ tokens: 20000, isOver: true })
   expect(data.sinceLastSession).toEqual({ isFirst: true })
 })
+
+test('/inspector history shows the trend including this session', async ($, on) => {
+  mock.store(on, {
+    'history:/workspace': {
+      ...lastSession['history:/workspace'],
+      trend: [{ sessionId: 'an-earlier-session', at: '2026-11-20T09:30:00.000Z', model: 'claude-opus-5-5', baseTokens: 24000 }],
+    },
+  })
+  mockSession(on, [], undefined, { CLAUDE_INSPECTOR_STARTUP_CHECK: '0' })
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
+
+  const { text } = await $.command.run({ command: 'inspector', args: 'history' }) as { text: string }
+  expect(text).toContain('## Loadout history')
+  expect(text).toContain('over the last 2 sessions')
+  expect(text).toContain('(this session) | claude-opus-5-5 | 27,400 | +3,400 |')
+})
