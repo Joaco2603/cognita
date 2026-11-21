@@ -20,7 +20,7 @@ npm run build
 npm run install:local
 ```
 
-Luego inicia Claude Code con `claude` y ejecuta `/inspector`.
+Luego inicia Claude Code con `claude` y ejecuta `/inspector` (pestaña Context con `2`) o `/inspector report` para un reporte en Markdown.
 
 ## Desarrollo
 

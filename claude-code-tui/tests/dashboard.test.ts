@@ -20,7 +20,8 @@ async function openDashboard($: any, on: any) {
     value: event.name === 'HOME' ? '/home/user' : undefined,
   }))
   on('fs.list', (_$: any, event: any) => ({
-    value: event.path === '/home/user/programming'
+    // The engine resolves paths natively (C:\home\user\programming on Windows).
+    value: String(event.path).replaceAll('\\', '/').endsWith('/home/user/programming')
       ? [
           { name: 'mixai', kind: 'directory', isLink: false },
           { name: 'clases', kind: 'directory', isLink: false },

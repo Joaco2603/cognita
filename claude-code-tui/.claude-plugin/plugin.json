@@ -1,8 +1,8 @@
 {
   "name": "workspace-dashboard",
   "displayName": "Workspace Dashboard",
-  "version": "0.1.0",
-  "description": "An in-session workspace and agents dashboard for Claude Code.",
+  "version": "0.2.0",
+  "description": "Measure what a Claude Code session has loaded into context (MCP servers, skills, CLAUDE.md, prompt sections) and flag what it never uses. Plus workspaces and agents.",
   "author": {
     "name": "Joaquin Pappa"
   }

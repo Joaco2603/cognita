@@ -1,25 +1,99 @@
 # Workspace Dashboard
 
-Workspace Dashboard is a Claude Code mod that opens an interactive pane inside the current Claude Code terminal session. It provides Dashboard and Agents navigation, a searchable workspace list, a live view of agents in the current session, and a submenu for launching a subagent in the selected workspace. The dashboard uses Claude Code's agent API; it does not open a separate Claude Code process.
+A Claude Code plugin that shows **what your session has loaded into the context window and whether it is earning its keep**. It runs inside your current Claude Code terminal session, so there is no separate app or second Claude process.
 
-## Run locally
+- **Context loadout.** A live meter of the window, the categories filling it (system prompt, tools, MCP tools, memory files, skills, messages), each CLAUDE.md/memory file, each MCP server, each skill and each custom agent, with its token cost.
+- **Biggest levers.** The few changes that would free the most context, with their saving: idle MCP servers, plugins whose skills never ran, and CLAUDE.md files of 2,000 tokens or more. Savings under 200 tokens are left out.
+- **Loaded but unused.** The plugin watches tool calls and skill use in the session and lists the MCP servers and skills that cost tokens but were never used. These are the first candidates to disable for the project.
+- **System prompt sections.** See every section of the last composed system prompt, including the ones *other plugins* inject (`<plugin>:<name>` ids), with approximate token sizes.
+- **Shareable report.** `/inspector report` prints the loadout as Markdown that you can paste into an issue, a PR or a team channel.
+- **Status line.** Shows `ctx 42% · $0.31` after every measurement. Turn it off with `CLAUDE_INSPECTOR_STATUSLINE=0`.
+- **Workspaces and agents.** Shows a searchable workspace list, the agents running in this session with token samples, and a launcher for a background subagent in any workspace.
+
+## Install
+
+From Claude Code (2.1.275 or later):
+
+```
+/plugin install workspace-dashboard --marketplace Joaco2603/cognita
+```
+
+From a clone instead:
+
+```bash
+cd claude-code-tui
+npm install
+npm run build
+npm run install:local   # copies the plugin to ~/.claude/skills/workspace-dashboard
+```
+
+Start Claude Code with `claude` and run `/inspector`. If a session is already running, run `/reload-plugins` first.
+
+## Usage
+
+| Command | What it does |
+| --- | --- |
+| `/inspector` | Open the dashboard pane |
+| `/inspector context` | Open the pane on the context loadout |
+| `/inspector report` | Print the loadout as Markdown (estimated counts, fast) |
+| `/inspector report full` | The same report with exact token counts |
+| `/inspector help` | List the subcommands |
+
+Hotkeys in the pane:
+
+| Key | Action |
+| --- | --- |
+| `1` / `2` / `3` | Dashboard, Context, Agents |
+| `o` `m` `p` `s` `y` | Context subviews: Overview, Files, MCP, Skills, Prompt |
+| `r` | Measure again (estimated) |
+| `x` | Exact count (asks Claude Code for a full breakdown) |
+| `f` | Search workspaces |
+| `n` | New conversation in the current workspace (`/clear`) |
+
+### Reading the Context tab
+
+- **Estimated or exact.** `r` asks Claude Code for a summary breakdown, which is fast and estimated. `x` asks for a full breakdown, the same counting `/context` does.
+- **MCP rows.** These read `server  loaded/total · N calls`. Deferred tools (not loaded yet) don't count against the window. `N calls` counts the calls made since the plugin loaded.
+- **Deferred.** Tools listed as deferred are outside the window until ToolSearch loads them. They show on a separate line rather than as part of how full the window is.
+- **Skills by source.** The Skills subview and the report group skills by plugin or settings source, so one noisy plugin stands out.
+- **Loaded but unused.** This covers loaded MCP servers with zero calls and skills with zero invocations, sorted by token cost. It is a hint, not a verdict: a skill can be worth listing even if this session did not use it.
+- **Prompt subview.** This view fills in after the first prompt that is composed while the plugin is loaded.
+
+## Configuration
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `CLAUDE_CODE_WORKSPACES_DIR` | `~/programming`, then the current directory's parent | The folder whose subfolders are listed as workspaces |
+| `CLAUDE_INSPECTOR_STATUSLINE` | on | Set it to `0` to keep the status line untouched |
+
+The current working directory is always listed, even when it is outside the workspaces root.
+
+## Development
 
 ```bash
 npm install
-npm run build
-npm run install:local
+npm run build      # tsc: src/*.ts -> hooks/*.js (the compiled hooks are committed)
+npm test           # build + node unit tests + claude plugin test (UI tests)
+npm run test:unit  # build + node unit tests only (no Claude Code needed)
+npm run validate   # claude plugin validate .
 ```
 
-After installing once, start Claude Code normally with `claude` and run `/inspector` to open the pane. Use `1` and `2` to switch Dashboard and Agents, `f` to search workspaces, and `n` to start a fresh conversation in the current working directory (`/clear`). Dashboard shows a context overview; refresh it to capture a `/context` snapshot. In Agents, switch between active and inactive agents, search the list, and select an agent to inspect its reported token samples and task status. The plugin API does not expose full agent prompts or skill-use events. Choose **New agent** to enter a task and start it in the selected workspace. For an already-running session, run `/reload-plugins` after installing.
+Layout:
 
-Workspaces are discovered from `~/programming` by default. Set `CLAUDE_CODE_WORKSPACES_DIR` before starting Claude Code to use a different directory. The current session's working directory is included even when it is outside that root.
+| Path | Role |
+| --- | --- |
+| `src/register.ts` | The hooks module: the `/inspector` command, the pane, and the observe-only hooks (`tool.call`, `skill.prompt`, `prompt.compose`, `prompt.context`, `session.measure`) |
+| `src/loadout.ts` | Pure analysis: groups the breakdown, joins it with usage, finds idle items, formats the report |
+| `src/context-view.ts` | The Context tab |
+| `src/dashboard-view.ts`, `src/agents-view.ts` | The Dashboard and Agents tabs |
+| `tests/*.test.ts` | Pane tests run by `claude plugin test` with a mocked engine |
+| `tests/*.test.mjs` | Node unit tests for `loadout.js`, the path helpers and the local install |
 
-## Development checks
+Every observing hook only reads the event and passes it on (`next(event)`). Hooks are wrapped in `try/catch`, so a measuring bug can never block a tool call or a prompt.
 
-```bash
-npm run build
-npm test
-npm run validate
-```
+## Limits and troubleshooting
 
-Agent monitoring is scoped to agents in the current Claude Code session. Background sessions started elsewhere are not included in this pane.
+- **Session scope.** Usage counts start when the plugin loads and cover only this session. Agents started in other sessions do not appear.
+- **What the API hides.** The plugin API does not expose full subagent prompts.
+- **Windows.** Paths with `\` and `/` both work. If workspaces don't show up, set `CLAUDE_CODE_WORKSPACES_DIR` to an absolute path.
+- **The pane doesn't open.** Run `claude plugin validate <plugin folder>`, then `/reload-plugins`. Start `claude --debug` to see any hook errors.

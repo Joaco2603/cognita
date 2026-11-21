@@ -14,14 +14,14 @@ test('local install copies all files imported by the hooks module', async () => 
   try {
     const result = spawnSync(process.execPath, ['scripts/install-local.mjs'], {
       cwd: projectRoot,
-      env: { ...process.env, HOME: home },
+      env: { ...process.env, HOME: home, USERPROFILE: home },
       encoding: 'utf8',
     })
 
     assert.equal(result.status, 0, result.stderr)
 
     const installedHooks = path.join(home, '.claude', 'skills', 'workspace-dashboard', 'hooks')
-    for (const file of ['register.js', 'agents-view.js', 'dashboard-view.js', 'utils.js']) {
+    for (const file of ['register.js', 'agents-view.js', 'context-view.js', 'dashboard-view.js', 'loadout.js', 'utils.js']) {
       await readFile(path.join(installedHooks, file), 'utf8')
     }
   } finally {
