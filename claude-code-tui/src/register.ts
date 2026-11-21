@@ -2,15 +2,21 @@ import { renderAgents } from './agents-view.js'
 import { renderContext } from './context-view.js'
 import { renderDashboard, renderSidebar } from './dashboard-view.js'
 import {
+  DEFAULT_GROWTH_ALERT,
   diffLoadout,
   emptyUsage,
+  formatJson,
   formatReport,
   measurePrompt,
   recordSkillUse,
   recordToolCall,
+  parseTokens,
   rememberSnapshot,
+  sinceBadge,
+  startupAlert,
   summarize,
   toSnapshot,
+  type AlertSettings,
   type Loadout,
   type LoadoutDiff,
   type PromptCapture,
@@ -36,6 +42,7 @@ const HELP = [
   '- `/inspector context`: open the pane on the context loadout',
   '- `/inspector report`: print what this session has loaded (estimated)',
   '- `/inspector report full`: same, with an exact token count',
+  '- `/inspector report json`: the same data as JSON, for scripts and CI (add `full` for exact counts)',
   '- `/inspector help`: this list',
 ].join('\n')
 
@@ -58,6 +65,7 @@ export function register(on: ModOn): void {
   let dashboardError = ''
   let contextSnapshots: Array<{ capturedAt: string; text: string }> = []
   let isStatusLineEnabled = true
+  let alerts: AlertSettings = { growth: DEFAULT_GROWTH_ALERT }
 
   // Context loadout: measured on demand, plus what the hooks below observe.
   const usageLog = emptyUsage()
@@ -92,19 +100,37 @@ export function register(on: ModOn): void {
     })
     currentDirectory = event.cwd ?? ''
     isStatusLineEnabled = (await $.env.get('CLAUDE_INSPECTOR_STATUSLINE'))?.trim() !== '0'
+    alerts = await readAlertSettings($)
+    const isStartupCheckEnabled = (await $.env.get('CLAUDE_INSPECTOR_STARTUP_CHECK'))?.trim() !== '0'
     ;({ workspaces, selectedWorkspace } = await discoverWorkspaces($, currentDirectory))
-    return next?.(event)
+    const result = await next?.(event)
+
+    // One quick measurement in the background: it saves this session's loadout
+    // for the next comparison and warns when the loadout grew or is over budget.
+    if (isStartupCheckEnabled && event.isInteractive !== false && !loadout) {
+      void readLoadout($, 'summary', usageLog, currentDirectory).then(async (measured) => {
+        if (loadout) return
+        applyLoadout(measured, 'summary')
+        const alert = startupAlert(measured.loadout, measured.since, alerts)
+        if (alert) await $.ui.toast(alert)
+        $.ui.invalidate('ui.render')
+      }).catch(() => undefined)
+    }
+    return result
   })
 
   on('command.run', { command: COMMAND_NAME }, async ($, event) => {
-    const [subcommand = '', option = ''] = (event.args ?? '').trim().toLowerCase().split(/\s+/)
+    const [subcommand = '', option = '', ...rest] = (event.args ?? '').trim().toLowerCase().split(/\s+/)
 
     if (subcommand === 'help') return { text: HELP }
 
     if (subcommand === 'report') {
       try {
-        const detail = option === 'full' ? 'full' : 'summary'
-        return { text: formatReport(applyLoadout(await readLoadout($, detail, usageLog, currentDirectory), detail), promptCapture(), usageLog, since) }
+        const options = new Set([option, ...rest])
+        const detail = options.has('full') ? 'full' : 'summary'
+        const measured = applyLoadout(await readLoadout($, detail, usageLog, currentDirectory), detail)
+        if (options.has('json')) return { text: '```json\n' + formatJson(measured, since, alerts) + '\n```' }
+        return { text: formatReport(measured, promptCapture(), usageLog, since, alerts.budget) }
       } catch {
         return { text: 'Could not measure the context window for this session.' }
       }
@@ -168,7 +194,7 @@ export function register(on: ModOn): void {
         const percent = context?.percent
         $.ui.status(percent === undefined
           ? undefined
-          : `ctx ${Math.round(percent)}%${cost ? ` · $${cost.usd.toFixed(2)}` : ''}`)
+          : [`ctx ${Math.round(percent)}%`, cost ? `$${cost.usd.toFixed(2)}` : '', sinceBadge(since)].filter(Boolean).join(' · '))
       } catch {
         // The status line is cosmetic.
       }
@@ -396,6 +422,13 @@ async function readLoadout($: ModApi, detail: 'summary' | 'full', usageLog: Usag
   if (!breakdown) throw new Error('Claude Code returned no context breakdown.')
   const loadout = summarize(breakdown, usageLog)
   return { loadout, since: await compareWithLastSession($, cwd, loadout) }
+}
+
+/** Budget and growth warnings from CLAUDE_INSPECTOR_BUDGET and CLAUDE_INSPECTOR_ALERT. */
+async function readAlertSettings($: ModApi): Promise<AlertSettings> {
+  const budget = parseTokens(await $.env.get('CLAUDE_INSPECTOR_BUDGET'))
+  const growth = parseTokens(await $.env.get('CLAUDE_INSPECTOR_ALERT'))
+  return { budget: budget || undefined, growth: growth ?? DEFAULT_GROWTH_ALERT }
 }
 
 /**

@@ -7,8 +7,10 @@ A Claude Code plugin that shows **what your session has loaded into the context 
 - **Since last session.** Each measurement is saved per project, so the next session shows what changed: `MCP server linear: added, 3,000 tokens`, a plugin's skills growing, a CLAUDE.md that doubled, a model switch. Catch context creep before it costs you.
 - **Loaded but unused.** The plugin watches tool calls and skill use in the session and lists the MCP servers and skills that cost tokens but were never used. These are the first candidates to disable for the project.
 - **System prompt sections.** See every section of the last composed system prompt, including the ones *other plugins* inject (`<plugin>:<name>` ids), with approximate token sizes.
+- **Startup check.** When a session starts, the loadout is measured in the background. A toast warns you if it grew by 2,000 tokens or more since the last session, or went over your budget, and names the biggest cause: `Context loadout grew +3.4k since last session, mostly MCP server linear (new)`.
+- **Context budget.** Set `CLAUDE_INSPECTOR_BUDGET=30k` and the report says whether what loads before the first message fits.
 - **Shareable report.** `/inspector report` prints the loadout as Markdown that you can paste into an issue, a PR or a team channel.
-- **Status line.** Shows `ctx 42% · $0.31` after every measurement. Turn it off with `CLAUDE_INSPECTOR_STATUSLINE=0`.
+- **Status line.** Shows `ctx 42% · $0.31 · +3.4k vs last` after every measurement (the last part only when the loadout changed). Turn it off with `CLAUDE_INSPECTOR_STATUSLINE=0`.
 - **Workspaces and agents.** Shows a searchable workspace list, the agents running in this session with token samples, and a launcher for a background subagent in any workspace.
 
 ## Install
@@ -38,6 +40,7 @@ Start Claude Code with `claude` and run `/inspector`. If a session is already ru
 | `/inspector context` | Open the pane on the context loadout |
 | `/inspector report` | Print the loadout as Markdown (estimated counts, fast) |
 | `/inspector report full` | The same report with exact token counts |
+| `/inspector report json` | The same data as JSON, for scripts and CI (combine with `full`) |
 | `/inspector help` | List the subcommands |
 
 Hotkeys in the pane:
@@ -67,6 +70,9 @@ Hotkeys in the pane:
 | --- | --- | --- |
 | `CLAUDE_CODE_WORKSPACES_DIR` | `~/programming`, then the current directory's parent | The folder whose subfolders are listed as workspaces |
 | `CLAUDE_INSPECTOR_STATUSLINE` | on | Set it to `0` to keep the status line untouched |
+| `CLAUDE_INSPECTOR_BUDGET` | none | Tokens that may load before the first message, such as `30000`, `30k` or `1.5M` |
+| `CLAUDE_INSPECTOR_ALERT` | `2000` | Growth since the last session that raises a startup toast; `0` turns growth alerts off |
+| `CLAUDE_INSPECTOR_STARTUP_CHECK` | on | Set it to `0` to skip the background measurement at session start |
 
 The current working directory is always listed, even when it is outside the workspaces root.
 

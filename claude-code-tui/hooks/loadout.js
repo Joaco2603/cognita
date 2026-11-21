@@ -1,6 +1,6 @@
 // Pure analysis of what a Claude Code session has loaded into its context
 // window. No engine calls here, so it is unit-tested directly.
-import { basename, formatTokenCount } from './utils.js';
+import { basename, formatTokenCount, formatTokensShort } from './utils.js';
 export function emptyUsage() {
     return { tools: {}, skills: {} };
 }
@@ -183,12 +183,18 @@ function table(headers, rows) {
 /** Long lists in the report stop here; the pane and the totals keep everything. */
 export const REPORT_ROWS = 15;
 /** Markdown report for `/inspector report`: paste-able into an issue or PR. */
-export function formatReport(loadout, prompt, usage, since) {
+export function formatReport(loadout, prompt, usage, since, budget) {
     const tokens = formatTokenCount;
+    const base = baseTokensOf(loadout);
     const lines = [
         '## Session loadout',
         '',
         `Model \`${loadout.model}\` · ${tokens(loadout.totalTokens)} / ${tokens(loadout.maxTokens)} tokens (${Math.round(loadout.percentage)}%) · ${tokens(loadout.freeTokens)} free`,
+        ...(budget === undefined
+            ? []
+            : ['', base > budget
+                    ? `**Over budget:** ${tokens(base)} tokens load before any message, ${tokens(base - budget)} over the ${tokens(budget)} budget.`
+                    : `Within budget: ${tokens(base)} of ${tokens(budget)} tokens load before any message.`]),
         '',
         '### Biggest levers',
         '',
@@ -280,7 +286,7 @@ export function toSnapshot(loadout, sessionId, at = new Date().toISOString()) {
         sessionId,
         at,
         model: loadout.model,
-        baseTokens: loadout.categories.filter((category) => !isConversation(category.name)).reduce((total, category) => total + category.tokens, 0),
+        baseTokens: baseTokensOf(loadout),
         items,
     };
 }
@@ -351,4 +357,65 @@ export function formatDiff(diff) {
         ? ['No change of 50 tokens or more.']
         : diff.changes.slice(0, REPORT_ROWS).map((change) => `- ${describeChange(change)}`)));
     return lines;
+}
+/** Tokens a session loads before any message: every category in the window but Messages. */
+export function baseTokensOf(loadout) {
+    return loadout.categories.filter((category) => !isConversation(category.name)).reduce((total, category) => total + category.tokens, 0);
+}
+/** Reads a token amount from a setting: `30000`, `30k`, `1.5M`. Anything else is unset. */
+export function parseTokens(value) {
+    const match = value?.trim().toLowerCase().replaceAll(',', '').replaceAll('_', '').match(/^(\d+(?:\.\d+)?)\s*([km]?)$/);
+    if (!match)
+        return undefined;
+    return Math.round(Number(match[1]) * (match[2] === 'm' ? 1_000_000 : match[2] === 'k' ? 1000 : 1));
+}
+/** Default growth that is worth a toast: about one mid-sized MCP server. */
+export const DEFAULT_GROWTH_ALERT = 2000;
+/**
+ * The one-line warning a session start may raise, or undefined when nothing
+ * is worth interrupting for. Over budget wins over growth.
+ */
+export function startupAlert(loadout, since, settings) {
+    const base = baseTokensOf(loadout);
+    const diff = since === 'first' ? undefined : since;
+    const grew = diff ? diff.baseAfter - diff.baseBefore : 0;
+    // Name a server, plugin or file over a whole category: that is what someone can act on.
+    const top = diff?.changes.find((change) => change.delta > 0 && change.kind !== 'category')
+        ?? diff?.changes.find((change) => change.delta > 0);
+    const cause = top ? `, mostly ${describeChange(top).replace(/: .*$/, '')} ${top.before === 0 ? '(new)' : `+${formatTokensShort(top.delta)}`}` : '';
+    if (settings.budget !== undefined && base > settings.budget) {
+        return `Context loadout ${formatTokensShort(base)} is over your ${formatTokensShort(settings.budget)} budget${grew > 0 ? ` (+${formatTokensShort(grew)} since last session${cause})` : ''}. Run /inspector context to see the levers.`;
+    }
+    if (settings.growth > 0 && grew >= settings.growth) {
+        return `Context loadout grew +${formatTokensShort(grew)} since last session${cause}. Run /inspector report for details.`;
+    }
+    return undefined;
+}
+/** Short status-line suffix for the change since the last session: `+3.4k`, or nothing. */
+export function sinceBadge(since) {
+    if (!since || since === 'first')
+        return '';
+    const grew = since.baseAfter - since.baseBefore;
+    if (Math.abs(grew) < MIN_CHANGE_TOKENS)
+        return '';
+    return `${grew > 0 ? '+' : '-'}${formatTokensShort(Math.abs(grew))} vs last`;
+}
+/** Machine-readable report for scripts and CI: `/inspector report json`. */
+export function formatJson(loadout, since, settings) {
+    const base = baseTokensOf(loadout);
+    return JSON.stringify({
+        shape: 'inspector-report-1',
+        model: loadout.model,
+        window: { used: loadout.totalTokens, max: loadout.maxTokens, percent: loadout.percentage, free: loadout.freeTokens },
+        baseTokens: base,
+        budget: settings.budget === undefined ? null : { tokens: settings.budget, isOver: base > settings.budget },
+        categories: loadout.categories,
+        deferred: loadout.deferred,
+        memoryFiles: loadout.memoryFiles,
+        mcpServers: loadout.mcpServers,
+        skillGroups: loadout.skillGroups,
+        levers: loadout.levers,
+        idle: loadout.idle,
+        sinceLastSession: since === undefined ? null : since === 'first' ? { isFirst: true } : since,
+    }, null, 2);
 }
