@@ -1,4 +1,5 @@
-import { formatTokenCount, type DashboardTab, type Workspace } from './utils.js'
+import { meter, type Loadout } from './loadout.js'
+import { formatTokenCount, formatTokensShort, slug, type DashboardTab, type Workspace } from './utils.js'
 
 export function renderSidebar(ui: UiComponents, options: {
   activeTab: DashboardTab
@@ -21,7 +22,7 @@ export function renderSidebar(ui: UiComponents, options: {
 
   const workspaceButtons = filteredWorkspaces.map((workspace, index) =>
     Button({
-      key: `workspace-${workspace.name.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}`,
+      key: `workspace-${slug(workspace.name)}`,
       label: `${options.selectedWorkspace === workspace.path ? '▸ ' : '  '}${workspace.name}`,
       hotkey: index === 0 ? 'w' : undefined,
       plain: true,
@@ -77,7 +78,8 @@ export function renderSidebar(ui: UiComponents, options: {
       ...workspaceButtons,
       Text({ children: ['NAVIGATE'], dimColor: true, bold: true }),
       tabButton('dashboard', 'Dashboard', '1'),
-      tabButton('agents', 'Agents', '2'),
+      tabButton('context', 'Context', '2'),
+      tabButton('agents', 'Agents', '3'),
     ],
   })
 }
@@ -86,8 +88,10 @@ export function renderDashboard(ui: UiComponents, options: {
   selected: Workspace
   sessionAgents: AgentInfo[]
   contextSnapshots: Array<{ capturedAt: string; text: string }>
+  loadout?: Loadout
   dashboardError: string
   onRefreshContext: () => void
+  onOpenContext: () => void
 }): unknown {
   const { Box, Button, Text } = ui
   const totalSubagentTokens = options.sessionAgents.reduce(
@@ -105,7 +109,7 @@ export function renderDashboard(ui: UiComponents, options: {
       Text({ children: ['  ·    ·'], color: '#D97757' }),
       Text({ children: ['·   ✳   ·'], color: '#D97757', bold: true }),
       Text({ children: ['  ·    ·'], color: '#D97757' }),
-      Text({ children: ['Welcome back, Joaquin'], bold: true }),
+      Text({ children: ['Welcome back'], bold: true }),
       Text({ children: ['What would you like to work on?'] }),
       Box({
         key: 'selected-workspace-card',
@@ -138,9 +142,22 @@ export function renderDashboard(ui: UiComponents, options: {
             plain: true,
             onPress: options.onRefreshContext,
           }),
+          options.loadout
+            ? Text({
+                key: 'dashboard-loadout',
+                children: [`${meter(options.loadout.percentage, 16)} ${Math.round(options.loadout.percentage)}% · ${formatTokensShort(options.loadout.idleTokens)} tokens unused`],
+                color: '#D97757',
+              })
+            : null,
           options.contextSnapshots.length > 0
             ? Text({ children: [options.contextSnapshots.at(-1)!.text], dimColor: true })
             : Text({ children: ['Refresh to capture current /context usage.'], dimColor: true }),
+          Button({
+            key: 'dashboard-open-context',
+            label: '→ Open context loadout',
+            plain: true,
+            onPress: options.onOpenContext,
+          }),
           options.dashboardError ? Text({ children: [options.dashboardError], color: '#F87171' }) : null,
         ],
       }),

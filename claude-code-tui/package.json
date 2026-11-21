@@ -1,11 +1,12 @@
 {
   "name": "claude-code-tui-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "claude plugin test && node --test tests/install-local.test.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs && claude plugin test",
+    "test:unit": "npm run build && node --test tests/*.test.mjs",
     "validate": "claude plugin validate .",
     "install:local": "node scripts/install-local.mjs"
   },
