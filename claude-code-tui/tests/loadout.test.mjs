@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  describeChange,
+  diffLoadout,
   emptyUsage,
   estimateTokens,
   findLevers,
@@ -12,8 +14,10 @@ import {
   pluginSections,
   recordSkillUse,
   recordToolCall,
+  rememberSnapshot,
   share,
   summarize,
+  toSnapshot,
 } from '../hooks/loadout.js'
 import { basename, dirname, joinPath } from '../hooks/utils.js'
 
@@ -189,4 +193,56 @@ test('path helpers handle POSIX and Windows paths', () => {
   assert.equal(dirname('/home/user/project'), '/home/user')
   assert.equal(joinPath('C:\\repos', 'cognita'), 'C:\\repos\\cognita')
   assert.equal(joinPath('/home/user/', 'programming'), '/home/user/programming')
+})
+
+test('a snapshot keeps what loads before any message, not the conversation', () => {
+  const loadout = summarize({
+    ...breakdown,
+    categories: [...breakdown.categories, { name: 'Messages', tokens: 7000, color: '', isDeferred: false, kind: 'used' }],
+  }, emptyUsage())
+  const snapshot = toSnapshot(loadout, 's1', '2026-11-20T10:00:00.000Z')
+  assert.equal(snapshot.baseTokens, 18000)
+  assert.equal(snapshot.items['category:Messages'], undefined)
+  assert.equal(snapshot.items['mcp:gh'], 4000)
+  assert.equal(snapshot.items['skills:plugin ops'], 200)
+  assert.equal(snapshot.items['file:/b/CLAUDE.md'], 90)
+})
+
+test('the baseline is the last snapshot of another session', () => {
+  const loadout = summarize(breakdown, emptyUsage())
+  const first = toSnapshot(loadout, 's1', '2026-11-20T10:00:00.000Z')
+  assert.equal(rememberSnapshot(undefined, first).baseline, undefined)
+  assert.equal(rememberSnapshot({ current: { shape: 'other' } }, first).baseline, undefined)
+
+  const stored = rememberSnapshot(undefined, first).history
+  const second = toSnapshot(loadout, 's2', '2026-11-21T10:00:00.000Z')
+  const { history, baseline } = rememberSnapshot(stored, second)
+  assert.equal(baseline.sessionId, 's1')
+
+  // Measuring again in the same session keeps comparing with s1.
+  const again = rememberSnapshot(history, { ...second, at: '2026-11-21T11:00:00.000Z' })
+  assert.equal(again.baseline.sessionId, 's1')
+  assert.equal(again.history.current.at, '2026-11-21T11:00:00.000Z')
+})
+
+test('diffLoadout lists added, removed and grown items, biggest first, ignoring noise', () => {
+  const before = { shape: 'loadout-1', sessionId: 'a', at: '2026-11-20T10:00:00.000Z', model: 'm1', baseTokens: 10000,
+    items: { 'mcp:gh': 4000, 'mcp:db': 2000, 'skills:userSettings': 500, 'file:/r/CLAUDE.md': 1000 } }
+  const after = { shape: 'loadout-1', sessionId: 'b', at: '2026-11-21T10:00:00.000Z', model: 'm2', baseTokens: 13000,
+    items: { 'mcp:gh': 4020, 'mcp:linear': 3000, 'skills:userSettings': 1400, 'file:/r/CLAUDE.md': 1000 } }
+  const diff = diffLoadout(before, after)
+  assert.deepEqual(diff.changes.map((change) => [change.kind, change.name, change.delta]), [
+    ['mcp', 'linear', 3000],
+    ['mcp', 'db', -2000],
+    ['skills', 'userSettings', 900],
+  ])
+  assert.deepEqual(diff.model, { before: 'm1', after: 'm2' })
+  assert.equal(describeChange(diff.changes[0]), 'MCP server linear: added, 3,000 tokens')
+  assert.equal(describeChange(diff.changes[1]), 'MCP server db: removed, was 2,000 tokens')
+  assert.equal(describeChange(diff.changes[2]), 'Skills from userSettings: +900 tokens (500 → 1,400)')
+
+  const report = formatReport(summarize(breakdown, emptyUsage()), undefined, emptyUsage(), diff)
+  assert.ok(report.includes('### Since last session'))
+  assert.ok(report.includes('Loaded before any message: 13,000 tokens, +3,000 since 2026-11-20 10:00 UTC.'))
+  assert.ok(!formatReport(summarize(breakdown, emptyUsage()), undefined, emptyUsage()).includes('Since last session'))
 })

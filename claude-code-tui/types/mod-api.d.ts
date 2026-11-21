@@ -111,6 +111,14 @@ interface ModApi {
   }
   session: {
     usage: (args?: { breakdown?: 'summary' | 'full'; columns?: number }) => Promise<SessionUsage>
+    id: () => Promise<string>
+  }
+  /** Per-plugin JSON key-value store that outlives the session. */
+  store: {
+    get: (key: string) => Promise<unknown>
+    set: (key: string, value: unknown) => Promise<void>
+    delete: (key: string) => Promise<void>
+    keys: () => Promise<string[]>
   }
   ui: {
     open: (options: {

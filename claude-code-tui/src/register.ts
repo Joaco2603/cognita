@@ -2,13 +2,17 @@ import { renderAgents } from './agents-view.js'
 import { renderContext } from './context-view.js'
 import { renderDashboard, renderSidebar } from './dashboard-view.js'
 import {
+  diffLoadout,
   emptyUsage,
   formatReport,
   measurePrompt,
   recordSkillUse,
   recordToolCall,
+  rememberSnapshot,
   summarize,
+  toSnapshot,
   type Loadout,
+  type LoadoutDiff,
   type PromptCapture,
   type UsageLog,
 } from './loadout.js'
@@ -62,6 +66,8 @@ export function register(on: ModOn): void {
   let measuredAt = ''
   let measuring = false
   let contextError = ''
+  /** The comparison with this project's previous session; undefined until known. */
+  let since: LoadoutDiff | 'first' | undefined
   let promptSections: readonly PromptComposeSection[] = []
   let promptBlocks: readonly PromptContextBlock[] = []
   let instructionFiles: readonly InstructionFile[] = []
@@ -71,11 +77,12 @@ export function register(on: ModOn): void {
       ? measurePrompt(promptSections, promptBlocks, instructionFiles)
       : undefined
 
-  const applyLoadout = (measured: Loadout, detail: 'summary' | 'full'): Loadout => {
-    loadout = measured
+  const applyLoadout = (measured: Measured, detail: 'summary' | 'full'): Loadout => {
+    loadout = measured.loadout
+    since = measured.since ?? since
     loadoutDetail = detail
     measuredAt = new Date().toLocaleTimeString()
-    return measured
+    return measured.loadout
   }
 
   on('session.start', async ($, event, next) => {
@@ -97,7 +104,7 @@ export function register(on: ModOn): void {
     if (subcommand === 'report') {
       try {
         const detail = option === 'full' ? 'full' : 'summary'
-        return { text: formatReport(applyLoadout(await readLoadout($, detail, usageLog), detail), promptCapture(), usageLog) }
+        return { text: formatReport(applyLoadout(await readLoadout($, detail, usageLog, currentDirectory), detail), promptCapture(), usageLog, since) }
       } catch {
         return { text: 'Could not measure the context window for this session.' }
       }
@@ -105,7 +112,7 @@ export function register(on: ModOn): void {
 
     if (subcommand === 'context') {
       activeTab = 'context'
-      if (!loadout) void readLoadout($, 'summary', usageLog).then((measured) => {
+      if (!loadout) void readLoadout($, 'summary', usageLog, currentDirectory).then((measured) => {
         applyLoadout(measured, 'summary')
         $.ui.invalidate('ui.render')
       }, () => undefined)
@@ -181,7 +188,7 @@ export function register(on: ModOn): void {
       contextError = ''
       redraw()
       try {
-        applyLoadout(await readLoadout($, detail, usageLog), detail)
+        applyLoadout(await readLoadout($, detail, usageLog, currentDirectory), detail)
       } catch {
         contextError = 'Could not measure the context window for this session.'
       } finally {
@@ -195,7 +202,7 @@ export function register(on: ModOn): void {
       const [agentResult, contextResult] = await Promise.allSettled([
         $.agent.list(),
         $.command.run({ command: 'context' }),
-        readLoadout($, 'summary', usageLog).then((measured) => applyLoadout(measured, 'summary')),
+        readLoadout($, 'summary', usageLog, currentDirectory).then((measured) => applyLoadout(measured, 'summary')),
       ])
       if (agentResult.status === 'fulfilled') sessionAgents = agentResult.value
       else dashboardError = 'Could not load subagent token statistics.'
@@ -296,6 +303,7 @@ export function register(on: ModOn): void {
     } else if (activeTab === 'context') {
       content = renderContext(ui, {
         loadout,
+        since,
         prompt: promptCapture(),
         subview: contextSubview,
         measuredAt,
@@ -379,12 +387,32 @@ export function register(on: ModOn): void {
   })
 }
 
+type Measured = { loadout: Loadout; since?: LoadoutDiff | 'first' }
+
 /** Measures the context window and joins it with what the session has used. */
-async function readLoadout($: ModApi, detail: 'summary' | 'full', usageLog: UsageLog): Promise<Loadout> {
+async function readLoadout($: ModApi, detail: 'summary' | 'full', usageLog: UsageLog, cwd: string): Promise<Measured> {
   const usage = await $.session.usage({ breakdown: detail, columns: 80 })
   const breakdown = usage.context.breakdown
   if (!breakdown) throw new Error('Claude Code returned no context breakdown.')
-  return summarize(breakdown, usageLog)
+  const loadout = summarize(breakdown, usageLog)
+  return { loadout, since: await compareWithLastSession($, cwd, loadout) }
+}
+
+/**
+ * Saves this measurement for the project and compares it with the last one
+ * another session saved. Best effort: a store failure only loses the comparison.
+ */
+async function compareWithLastSession($: ModApi, cwd: string, loadout: Loadout): Promise<LoadoutDiff | 'first' | undefined> {
+  if (!cwd) return undefined
+  try {
+    const key = `history:${cwd}`
+    const snapshot = toSnapshot(loadout, await $.session.id())
+    const { history, baseline } = rememberSnapshot(await $.store.get(key), snapshot)
+    await $.store.set(key, history)
+    return baseline ? diffLoadout(baseline, snapshot) : 'first'
+  } catch {
+    return undefined
+  }
 }
 
 /**
