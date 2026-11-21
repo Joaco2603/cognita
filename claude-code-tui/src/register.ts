@@ -5,6 +5,7 @@ import {
   DEFAULT_GROWTH_ALERT,
   diffLoadout,
   emptyUsage,
+  formatHistory,
   formatJson,
   formatReport,
   measurePrompt,
@@ -16,6 +17,7 @@ import {
   startupAlert,
   summarize,
   toSnapshot,
+  trendOf,
   type AlertSettings,
   type Loadout,
   type LoadoutDiff,
@@ -43,6 +45,7 @@ const HELP = [
   '- `/inspector report`: print what this session has loaded (estimated)',
   '- `/inspector report full`: same, with an exact token count',
   '- `/inspector report json`: the same data as JSON, for scripts and CI (add `full` for exact counts)',
+  '- `/inspector history`: how the loadout changed across the last sessions in this project',
   '- `/inspector help`: this list',
 ].join('\n')
 
@@ -133,6 +136,17 @@ export function register(on: ModOn): void {
         return { text: formatReport(measured, promptCapture(), usageLog, since, alerts.budget) }
       } catch {
         return { text: 'Could not measure the context window for this session.' }
+      }
+    }
+
+    if (subcommand === 'history') {
+      try {
+        // Measuring first adds this session to the trend.
+        applyLoadout(await readLoadout($, 'summary', usageLog, currentDirectory), 'summary')
+        const trend = trendOf(await $.store.get(`history:${currentDirectory}`))
+        return { text: formatHistory(trend, await $.session.id(), alerts.budget) }
+      } catch {
+        return { text: 'Could not read the loadout history for this project.' }
       }
     }
 

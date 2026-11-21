@@ -1,7 +1,7 @@
 import { renderAgents } from './agents-view.js';
 import { renderContext } from './context-view.js';
 import { renderDashboard, renderSidebar } from './dashboard-view.js';
-import { DEFAULT_GROWTH_ALERT, diffLoadout, emptyUsage, formatJson, formatReport, measurePrompt, recordSkillUse, recordToolCall, parseTokens, rememberSnapshot, sinceBadge, startupAlert, summarize, toSnapshot, } from './loadout.js';
+import { DEFAULT_GROWTH_ALERT, diffLoadout, emptyUsage, formatHistory, formatJson, formatReport, measurePrompt, recordSkillUse, recordToolCall, parseTokens, rememberSnapshot, sinceBadge, startupAlert, summarize, toSnapshot, trendOf, } from './loadout.js';
 import { basename, dirname, joinPath, } from './utils.js';
 const PANE_ID = 'workspace-dashboard';
 const COMMAND_NAME = 'inspector';
@@ -13,6 +13,7 @@ const HELP = [
     '- `/inspector report`: print what this session has loaded (estimated)',
     '- `/inspector report full`: same, with an exact token count',
     '- `/inspector report json`: the same data as JSON, for scripts and CI (add `full` for exact counts)',
+    '- `/inspector history`: how the loadout changed across the last sessions in this project',
     '- `/inspector help`: this list',
 ].join('\n');
 export function register(on) {
@@ -98,6 +99,17 @@ export function register(on) {
             }
             catch {
                 return { text: 'Could not measure the context window for this session.' };
+            }
+        }
+        if (subcommand === 'history') {
+            try {
+                // Measuring first adds this session to the trend.
+                applyLoadout(await readLoadout($, 'summary', usageLog, currentDirectory), 'summary');
+                const trend = trendOf(await $.store.get(`history:${currentDirectory}`));
+                return { text: formatHistory(trend, await $.session.id(), alerts.budget) };
+            }
+            catch {
+                return { text: 'Could not read the loadout history for this project.' };
             }
         }
         if (subcommand === 'context') {

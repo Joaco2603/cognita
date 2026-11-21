@@ -438,7 +438,19 @@ export type LoadoutSnapshot = {
 export type LoadoutHistory = {
   current: LoadoutSnapshot
   previous?: LoadoutSnapshot
+  /** One point per session, oldest first, at most TREND_LENGTH. */
+  trend?: TrendPoint[]
 }
+
+/** The size of one session's loadout, kept to draw the project's trend. */
+export type TrendPoint = {
+  sessionId: string
+  at: string
+  model: string
+  baseTokens: number
+}
+
+export const TREND_LENGTH = 20
 
 export type LoadoutChange = {
   kind: 'category' | 'mcp' | 'skills' | 'file'
@@ -494,8 +506,70 @@ export function rememberSnapshot(stored: unknown, snapshot: LoadoutSnapshot): { 
   const current = isSnapshot(history?.current) ? history.current : undefined
   const previous = isSnapshot(history?.previous) ? history.previous : undefined
   const baseline = current && current.sessionId !== snapshot.sessionId ? current : previous
-  return { history: { current: snapshot, previous: baseline }, baseline }
+  const point: TrendPoint = { sessionId: snapshot.sessionId, at: snapshot.at, model: snapshot.model, baseTokens: snapshot.baseTokens }
+  const earlier = (Array.isArray(history?.trend) ? history.trend : [])
+    .filter(isTrendPoint)
+    .filter((entry) => entry.sessionId !== snapshot.sessionId)
+  const trend = [...earlier, point].slice(-TREND_LENGTH)
+  return { history: { current: snapshot, previous: baseline, trend }, baseline }
 }
+
+function isTrendPoint(value: unknown): value is TrendPoint {
+  const point = value as TrendPoint | undefined
+  return typeof point?.sessionId === 'string' && typeof point.at === 'string' && typeof point.baseTokens === 'number'
+}
+
+/** The trend a stored history holds, oldest first; empty for anything unreadable. */
+export function trendOf(stored: unknown): TrendPoint[] {
+  const trend = (stored as Partial<LoadoutHistory> | undefined)?.trend
+  return Array.isArray(trend) ? trend.filter(isTrendPoint) : []
+}
+
+const SPARK = '▁▂▃▄▅▆▇█'
+
+/** One block per value, scaled between the smallest and largest. */
+export function sparkline(values: number[]): string {
+  if (values.length === 0) return ''
+  const low = Math.min(...values)
+  const high = Math.max(...values)
+  const step = (high - low) / (SPARK.length - 1)
+  return values.map((value) => SPARK[step === 0 ? 3 : Math.round((value - low) / step)]).join('')
+}
+
+const signed = (tokens: number) => (tokens > 0 ? '+' : tokens < 0 ? '-' : '±') + Math.abs(tokens).toLocaleString('en-US')
+
+/** Markdown for `/inspector history`: how the loadout moved across this project's sessions. */
+export function formatHistory(trend: TrendPoint[], currentSessionId?: string, budget?: number): string {
+  if (trend.length === 0) return 'No measurements saved for this project yet.'
+  const values = trend.map((point) => point.baseTokens)
+  const first = trend[0]
+  const last = trend[trend.length - 1]
+  const lines = [
+    '## Loadout history',
+    '',
+    `Tokens that load before the first message, over the last ${trend.length} session${trend.length === 1 ? '' : 's'} in this project.`,
+    '',
+    '`' + sparkline(values) + '`  ' + `${formatTokensShort(Math.min(...values))} to ${formatTokensShort(Math.max(...values))}`,
+    '',
+  ]
+  if (trend.length > 1) {
+    lines.push(`**Overall:** ${signed(last.baseTokens - first.baseTokens)} tokens since ${formatWhen(first.at)}.`, '')
+  }
+  if (budget) {
+    const over = trend.filter((point) => point.baseTokens > budget).length
+    lines.push(`**Budget:** ${over} of ${trend.length} sessions went over ${budget.toLocaleString('en-US')} tokens.`, '')
+  }
+  lines.push('| When | Model | Tokens | Change |', '| --- | --- | ---: | ---: |')
+  const rows = trend.map((point, index) => {
+    const change = index === 0 ? '' : signed(point.baseTokens - trend[index - 1].baseTokens)
+    const when = formatWhen(point.at) + (point.sessionId === currentSessionId ? ' (this session)' : '')
+    return `| ${when} | ${point.model || 'unknown'} | ${point.baseTokens.toLocaleString('en-US')} | ${change} |`
+  })
+  lines.push(...rows.reverse())
+  return lines.join('\n')
+}
+
+const formatWhen = (at: string) => at.slice(0, 16).replace('T', ' ') + ' UTC'
 
 export function diffLoadout(before: LoadoutSnapshot, after: LoadoutSnapshot): LoadoutDiff {
   const changes: LoadoutChange[] = []

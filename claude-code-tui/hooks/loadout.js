@@ -266,6 +266,7 @@ export function shortPath(path) {
     const parts = path.split(/[\\/]/).filter(Boolean);
     return parts.length <= 2 ? path : `…/${parts.slice(-2).join('/')}` || basename(path);
 }
+export const TREND_LENGTH = 20;
 /** Changes smaller than this are noise between two measurements. */
 export const MIN_CHANGE_TOKENS = 50;
 const isConversation = (name) => /^messages$/i.test(name);
@@ -304,8 +305,65 @@ export function rememberSnapshot(stored, snapshot) {
     const current = isSnapshot(history?.current) ? history.current : undefined;
     const previous = isSnapshot(history?.previous) ? history.previous : undefined;
     const baseline = current && current.sessionId !== snapshot.sessionId ? current : previous;
-    return { history: { current: snapshot, previous: baseline }, baseline };
+    const point = { sessionId: snapshot.sessionId, at: snapshot.at, model: snapshot.model, baseTokens: snapshot.baseTokens };
+    const earlier = (Array.isArray(history?.trend) ? history.trend : [])
+        .filter(isTrendPoint)
+        .filter((entry) => entry.sessionId !== snapshot.sessionId);
+    const trend = [...earlier, point].slice(-TREND_LENGTH);
+    return { history: { current: snapshot, previous: baseline, trend }, baseline };
 }
+function isTrendPoint(value) {
+    const point = value;
+    return typeof point?.sessionId === 'string' && typeof point.at === 'string' && typeof point.baseTokens === 'number';
+}
+/** The trend a stored history holds, oldest first; empty for anything unreadable. */
+export function trendOf(stored) {
+    const trend = stored?.trend;
+    return Array.isArray(trend) ? trend.filter(isTrendPoint) : [];
+}
+const SPARK = '▁▂▃▄▅▆▇█';
+/** One block per value, scaled between the smallest and largest. */
+export function sparkline(values) {
+    if (values.length === 0)
+        return '';
+    const low = Math.min(...values);
+    const high = Math.max(...values);
+    const step = (high - low) / (SPARK.length - 1);
+    return values.map((value) => SPARK[step === 0 ? 3 : Math.round((value - low) / step)]).join('');
+}
+const signed = (tokens) => (tokens > 0 ? '+' : tokens < 0 ? '-' : '±') + Math.abs(tokens).toLocaleString('en-US');
+/** Markdown for `/inspector history`: how the loadout moved across this project's sessions. */
+export function formatHistory(trend, currentSessionId, budget) {
+    if (trend.length === 0)
+        return 'No measurements saved for this project yet.';
+    const values = trend.map((point) => point.baseTokens);
+    const first = trend[0];
+    const last = trend[trend.length - 1];
+    const lines = [
+        '## Loadout history',
+        '',
+        `Tokens that load before the first message, over the last ${trend.length} session${trend.length === 1 ? '' : 's'} in this project.`,
+        '',
+        '`' + sparkline(values) + '`  ' + `${formatTokensShort(Math.min(...values))} to ${formatTokensShort(Math.max(...values))}`,
+        '',
+    ];
+    if (trend.length > 1) {
+        lines.push(`**Overall:** ${signed(last.baseTokens - first.baseTokens)} tokens since ${formatWhen(first.at)}.`, '');
+    }
+    if (budget) {
+        const over = trend.filter((point) => point.baseTokens > budget).length;
+        lines.push(`**Budget:** ${over} of ${trend.length} sessions went over ${budget.toLocaleString('en-US')} tokens.`, '');
+    }
+    lines.push('| When | Model | Tokens | Change |', '| --- | --- | ---: | ---: |');
+    const rows = trend.map((point, index) => {
+        const change = index === 0 ? '' : signed(point.baseTokens - trend[index - 1].baseTokens);
+        const when = formatWhen(point.at) + (point.sessionId === currentSessionId ? ' (this session)' : '');
+        return `| ${when} | ${point.model || 'unknown'} | ${point.baseTokens.toLocaleString('en-US')} | ${change} |`;
+    });
+    lines.push(...rows.reverse());
+    return lines.join('\n');
+}
+const formatWhen = (at) => at.slice(0, 16).replace('T', ' ') + ' UTC';
 export function diffLoadout(before, after) {
     const changes = [];
     for (const id of new Set([...Object.keys(before.items), ...Object.keys(after.items)])) {

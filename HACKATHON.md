@@ -151,6 +151,10 @@ Registrarlo en la sección siguiente para la entrega.
   - La status line muestra el cambio contra la sesión anterior (`+3.4k vs last`).
   - `/inspector report json` para scripts y CI. Probado en una sesión real: baseTokens 33,828 contra un presupuesto de 20k.
   - Tests: 24 de UI y 24 unitarios, todos en verde.
+- **2026-11-21 · Historial por proyecto (v0.5.0).**
+  - `/inspector history`: tendencia de las últimas 20 sesiones del proyecto con sparkline, cambio total, sesiones sobre el presupuesto y una fila por sesión.
+  - Probado en sesiones reales: `█▁ 30k to 34k`, "-3,377 tokens" al quitar los MCP servers con `--strict-mcp-config`.
+  - Tests: 25 de UI y 27 unitarios, todos en verde.
 
 ## Checklist de entrega
 

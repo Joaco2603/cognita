@@ -8,6 +8,7 @@ import {
   emptyUsage,
   estimateTokens,
   findLevers,
+  formatHistory,
   formatJson,
   formatReport,
   mcpServerOf,
@@ -20,7 +21,9 @@ import {
   rememberSnapshot,
   share,
   sinceBadge,
+  sparkline,
   startupAlert,
+  trendOf,
   summarize,
   toSnapshot,
 } from '../hooks/loadout.js'
@@ -308,4 +311,42 @@ test('the report states the budget when one is set', () => {
   const loadout = summarize(breakdown, emptyUsage())
   assert.ok(formatReport(loadout, undefined, emptyUsage(), undefined, 10000).includes('**Over budget:** 18,000 tokens load before any message, 8,000 over the 10,000 budget.'))
   assert.ok(formatReport(loadout, undefined, emptyUsage(), undefined, 30000).includes('Within budget: 18,000 of 30,000 tokens'))
+})
+
+const snap = (sessionId, baseTokens, at = '2026-11-20T10:00:00.000Z') => ({
+  shape: 'loadout-1', sessionId, at, model: 'claude-opus-5-5', baseTokens, items: {},
+})
+
+test('rememberSnapshot keeps one trend point per session, newest last, capped', () => {
+  let stored
+  for (let index = 0; index < 25; index++) stored = rememberSnapshot(stored, snap('s' + index, 1000 + index)).history
+  stored = rememberSnapshot(stored, snap('s24', 9999)).history
+  const trend = trendOf(stored)
+  assert.equal(trend.length, 20)
+  assert.equal(trend[0].sessionId, 's5')
+  assert.equal(trend[19].sessionId, 's24')
+  assert.equal(trend[19].baseTokens, 9999)
+  assert.deepEqual(trendOf({ current: snap('old', 1) }), [])
+  assert.deepEqual(trendOf('garbage'), [])
+})
+
+test('sparkline scales between the smallest and largest value', () => {
+  assert.equal(sparkline([0, 7, 14]), '▁▅█')
+  assert.equal(sparkline([5, 5]), '▄▄')
+  assert.equal(sparkline([]), '')
+})
+
+test('formatHistory lists sessions newest first with the change and the budget', () => {
+  const trend = [
+    { sessionId: 'a', at: '2026-11-19T08:00:00.000Z', model: 'claude-opus-5-5', baseTokens: 20000 },
+    { sessionId: 'b', at: '2026-11-20T08:00:00.000Z', model: 'claude-opus-5-5', baseTokens: 26000 },
+    { sessionId: 'c', at: '2026-11-21T08:00:00.000Z', model: 'claude-opus-5-5', baseTokens: 24500 },
+  ]
+  const text = formatHistory(trend, 'c', 25000)
+  assert.ok(text.includes('**Overall:** +4,500 tokens since 2026-11-19 08:00 UTC.'))
+  assert.ok(text.includes('**Budget:** 1 of 3 sessions went over 25,000 tokens.'))
+  const rows = text.split('\n').filter((line) => line.startsWith('| 2026'))
+  assert.equal(rows[0], '| 2026-11-21 08:00 UTC (this session) | claude-opus-5-5 | 24,500 | -1,500 |')
+  assert.equal(rows[2], '| 2026-11-19 08:00 UTC | claude-opus-5-5 | 20,000 |  |')
+  assert.equal(formatHistory([]), 'No measurements saved for this project yet.')
 })
