@@ -1,0 +1,128 @@
+{
+  "claude-code-tui/.claude-plugin/plugin.json": {
+    "mtime": 1795207256.0920286,
+    "seen": 1795223651.137983,
+    "ast_hash": "bbacb2e8f9a92cc764223c92ade29d72",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/hooks/agents-view.js": {
+    "mtime": 1795223638.0839143,
+    "seen": 1795223651.137986,
+    "ast_hash": "14eb1ec3bb884b67fcff01989b74ba87",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/hooks/dashboard-view.js": {
+    "mtime": 1795223638.0862021,
+    "seen": 1795223651.1379871,
+    "ast_hash": "447f13bb80ff94b90fc8cc0f603d3a80",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/hooks/hooks.json": {
+    "mtime": 1795207256.119704,
+    "seen": 1795223651.137988,
+    "ast_hash": "3d2a840f4cb7ee59a07eef8e045cedc1",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/hooks/register.js": {
+    "mtime": 1795223638.090369,
+    "seen": 1795223651.137989,
+    "ast_hash": "90e449e989d4e1875d12e5b4900c55b8",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/hooks/utils.js": {
+    "mtime": 1795223638.080581,
+    "seen": 1795223651.137989,
+    "ast_hash": "ef3c97054db39ed380da2d621c058f3e",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/package.json": {
+    "mtime": 1795209355.1926882,
+    "seen": 1795223651.13799,
+    "ast_hash": "f525f96fa3c355ae42f2084ba5fc1395",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/scripts/install-local.mjs": {
+    "mtime": 1795209384.7344692,
+    "seen": 1795223651.13799,
+    "ast_hash": "e845162f48f9c1f5c26e5a7ed949c5cd",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/src/agents-view.ts": {
+    "mtime": 1795223632.2560515,
+    "seen": 1795223651.137991,
+    "ast_hash": "0dc834e633a916bece9f3717d0a9c201",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/src/dashboard-view.ts": {
+    "mtime": 1795223632.253769,
+    "seen": 1795223651.137992,
+    "ast_hash": "4d93362abe21f84c729f8c27bb771ed0",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/src/register.ts": {
+    "mtime": 1795223584.7852187,
+    "seen": 1795223651.137992,
+    "ast_hash": "f8427ab0fea44674c40f4c6740a8aba6",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/src/utils.ts": {
+    "mtime": 1795223619.5255194,
+    "seen": 1795223651.1379929,
+    "ast_hash": "317571ec94bc1042c49fcda2faea7127",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/tests/dashboard.test.ts": {
+    "mtime": 1795223387.7908857,
+    "seen": 1795223651.1379929,
+    "ast_hash": "e2c9773386e45099613ea96230a168db",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/tsconfig.json": {
+    "mtime": 1795207064.7112474,
+    "seen": 1795223651.137994,
+    "ast_hash": "999583f0d5eeae35e5168c98f6abe15a",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/types/mod-api.d.ts": {
+    "mtime": 1795222042.9728413,
+    "seen": 1795223651.137994,
+    "ast_hash": "ac087e637ffe1fe762af40fe06be1f07",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1795204912.323462,
+    "seen": 1795223651.137995,
+    "ast_hash": "51098562052ffa32ae12628fe4ab48cf",
+    "semantic_hash": ""
+  },
+  "CLAUDE.md": {
+    "mtime": 1795203692.85061,
+    "seen": 1795223651.137995,
+    "ast_hash": "8d542ec47f9dde51534c87c2b887e5e5",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/README.md": {
+    "mtime": 1795223362.5638008,
+    "seen": 1795223651.137996,
+    "ast_hash": "7a1891ad8ecd4b1e66640db788769215",
+    "semantic_hash": ""
+  },
+  "skills/file-size-discipline/SKILL.md": {
+    "mtime": 1795204800.6862607,
+    "seen": 1795223651.137996,
+    "ast_hash": "d88e3d4fe13eca67a2590d3ca4dc8e7f",
+    "semantic_hash": ""
+  },
+  "skills/rust-terminal-ui/SKILL.md": {
+    "mtime": 1795204922.5613668,
+    "seen": 1795223651.1379972,
+    "ast_hash": "cd5f549f999375ddbd239cbc3742cafe",
+    "semantic_hash": ""
+  },
+  "claude-code-tui/package-lock.json": {
+    "mtime": 1795207077.5148642,
+    "seen": 1795223651.1379972,
+    "ast_hash": "2ae6fe9c5ea318a6c0bf5866116af756",
+    "semantic_hash": ""
+  }
+}

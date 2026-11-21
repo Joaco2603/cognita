@@ -1,0 +1,213 @@
+{
+  "communities": {
+    "0": [
+      "block",
+      "border",
+      "borders",
+      "claude_code_tui_src_ui",
+      "clear",
+      "constraint",
+      "direction",
+      "layout",
+      "line",
+      "list",
+      "listitem",
+      "liststate",
+      "modifier",
+      "paragraph",
+      "span",
+      "style",
+      "tabs"
+    ],
+    "1": [
+      "claude_code_tui_src_app",
+      "claude_code_tui_src_app_app_default",
+      "claude_code_tui_src_app_app_handle",
+      "claude_code_tui_src_app_appevent_moveworkspace",
+      "claude_code_tui_src_app_appevent_selectview",
+      "claude_code_tui_src_app_command_t_creates_an_internal_terminal_tab",
+      "claude_code_tui_src_app_navigation_switches_between_dashboard_and_agents",
+      "claude_code_tui_src_app_search_and_settings_open_as_overlays",
+      "claude_code_tui_src_app_starts_on_dashboard_with_workspace_selection",
+      "claude_code_tui_src_app_workspace",
+      "claude_code_tui_src_app_workspace_navigation_wraps_in_both_directions",
+      "super"
+    ],
+    "2": [
+      "claude_code_tui_src_app_appevent",
+      "claude_code_tui_src_app_appevent_closeoverlay",
+      "claude_code_tui_src_app_appevent_newconversation",
+      "claude_code_tui_src_app_appevent_newterminal",
+      "claude_code_tui_src_app_appevent_noop",
+      "claude_code_tui_src_app_appevent_opensearch",
+      "claude_code_tui_src_app_appevent_opensettings",
+      "claude_code_tui_src_app_appevent_openworkspace",
+      "claude_code_tui_src_app_appevent_quit",
+      "claude_code_tui_src_app_view",
+      "claude_code_tui_src_app_view_agents",
+      "claude_code_tui_src_app_view_dashboard"
+    ],
+    "3": [
+      "claude_code_tui_src_app_app",
+      "claude_code_tui_src_ui_centered_rect",
+      "claude_code_tui_src_ui_render",
+      "claude_code_tui_src_ui_render_content",
+      "claude_code_tui_src_ui_render_footer",
+      "claude_code_tui_src_ui_render_header",
+      "claude_code_tui_src_ui_render_overlay",
+      "claude_code_tui_src_ui_render_sidebar",
+      "frame",
+      "rect"
+    ],
+    "4": [
+      "claude_code_tui_src_main",
+      "claude_code_tui_src_main_main",
+      "claude_code_tui_src_main_run",
+      "defaultterminal",
+      "error",
+      "event",
+      "keycode",
+      "keyeventkind",
+      "keymodifiers"
+    ],
+    "5": [
+      "claude_code_tui_src_ui_accent",
+      "claude_code_tui_src_ui_bg",
+      "claude_code_tui_src_ui_muted",
+      "claude_code_tui_src_ui_panel",
+      "color"
+    ],
+    "6": [
+      "claude_code_tui_src_app_overlay",
+      "claude_code_tui_src_app_overlay_none",
+      "claude_code_tui_src_app_overlay_search",
+      "claude_code_tui_src_app_overlay_settings"
+    ],
+    "7": [
+      "pkg_claude_code_tui"
+    ]
+  },
+  "cohesion": {
+    "0": 0.11764705882352941,
+    "1": 0.2727272727272727,
+    "2": 0.16666666666666666,
+    "3": 0.4666666666666667,
+    "4": 0.2777777777777778,
+    "5": 0.4,
+    "6": 0.5,
+    "7": 1.0
+  },
+  "gods": [
+    {
+      "id": "claude_code_tui_src_app_appevent",
+      "label": "AppEvent",
+      "degree": 14
+    },
+    {
+      "id": "claude_code_tui_src_app_app",
+      "label": "App",
+      "degree": 12
+    },
+    {
+      "id": "claude_code_tui_src_ui_render",
+      "label": "render()",
+      "degree": 9
+    },
+    {
+      "id": "claude_code_tui_src_app_overlay",
+      "label": "Overlay",
+      "degree": 6
+    },
+    {
+      "id": "claude_code_tui_src_ui_render_header",
+      "label": "render_header()",
+      "degree": 5
+    },
+    {
+      "id": "claude_code_tui_src_ui_render_sidebar",
+      "label": "render_sidebar()",
+      "degree": 5
+    },
+    {
+      "id": "claude_code_tui_src_ui_render_content",
+      "label": "render_content()",
+      "degree": 5
+    },
+    {
+      "id": "claude_code_tui_src_ui_render_footer",
+      "label": "render_footer()",
+      "degree": 5
+    },
+    {
+      "id": "claude_code_tui_src_app_navigation_switches_between_dashboard_and_agents",
+      "label": "navigation_switches_between_dashboard_and_agents()",
+      "degree": 4
+    },
+    {
+      "id": "claude_code_tui_src_app_workspace_navigation_wraps_in_both_directions",
+      "label": "workspace_navigation_wraps_in_both_directions()",
+      "degree": 4
+    }
+  ],
+  "surprises": [
+    {
+      "source": "render_header()",
+      "target": "View",
+      "source_files": [
+        "claude-code-tui/src/ui.rs",
+        "claude-code-tui/src/app.rs"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "bridges separate communities"
+    },
+    {
+      "source": "run()",
+      "target": "render()",
+      "source_files": [
+        "claude-code-tui/src/main.rs",
+        "claude-code-tui/src/ui.rs"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "bridges separate communities"
+    },
+    {
+      "source": "render()",
+      "target": "App",
+      "source_files": [
+        "claude-code-tui/src/ui.rs",
+        "claude-code-tui/src/app.rs"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "cross-file semantic connection"
+    },
+    {
+      "source": "render_content()",
+      "target": "App",
+      "source_files": [
+        "claude-code-tui/src/ui.rs",
+        "claude-code-tui/src/app.rs"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "cross-file semantic connection"
+    },
+    {
+      "source": "render_footer()",
+      "target": "App",
+      "source_files": [
+        "claude-code-tui/src/ui.rs",
+        "claude-code-tui/src/app.rs"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "cross-file semantic connection"
+    }
+  ],
+  "tokens": {
+    "input": 0,
+    "output": 0
+  }
+}
