@@ -131,6 +131,14 @@ interface ModApi {
     /** The project folder the session started in. */
     cwd: () => Promise<string>
   }
+  process: {
+    /** Runs a command by argument vector (no shell); resolves on any exit code. */
+    run: (argv: readonly string[], init?: { cwd?: string; timeoutMs?: number }) => Promise<{
+      exitCode: number
+      stdout: string
+      stderr: string
+    }>
+  }
   mcp: {
     /** Connects a server a hook held back; accepts the /mcp name or the tool-name spelling. */
     connect: (server: string) => Promise<

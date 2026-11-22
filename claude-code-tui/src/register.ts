@@ -19,6 +19,7 @@ import {
 } from './cost.js'
 import { renderOverview, renderSidebar, renderTabStrip } from './dashboard-view.js'
 import { createLazyMcp, type HeldView, type LazyIo, type LazyMcp } from './lazy-mcp.js'
+import { applyTrim, wantsApply } from './trim.js'
 import {
   DEFAULT_GROWTH_ALERT,
   diffLoadout,
@@ -38,6 +39,7 @@ import {
   summarize,
   toSnapshot,
   trendOf,
+  trimLevers,
   type AlertSettings,
   type Loadout,
   type LoadoutDiff,
@@ -67,6 +69,7 @@ const HELP = [
   '- `/cognita supply`: every hook and MCP server that runs code here, and whether it is pinned to a version (`json` for scripts)',
   '- `/cognita report`: what this session has loaded into context (estimated; `full` for an exact count, `json` for scripts)',
   '- `/cognita trim`: a step-by-step plan, with commands, to shrink what loads before the first message',
+  '- `/cognita trim --apply`: do the plugin and MCP steps of that plan for this project (instruction files stay manual)',
   '- `/cognita history`: how the loadout changed across the last sessions in this project',
   '- `/cognita cost`: what sessions cost in dollars in this project, per day and per session (`json` for scripts)',
   '- `/cognita context` · `/cognita access open`: open the pane on that view',
@@ -373,6 +376,17 @@ async function runCommand($: ModApi, state: State, event: ModEvent): Promise<{ t
   if (subcommand === 'trim') {
     try {
       const measured = applyLoadout(state, await readLoadout($, 'summary', state.usageLog, state.currentDirectory, state.lazy), 'summary')
+      if (wantsApply(options)) {
+        return {
+          text: await applyTrim(trimLevers(measured), {
+            run: async (argv) => {
+              const { exitCode, stderr } = await $.process.run(argv)
+              return { exitCode, stderr }
+            },
+            hold: (server) => state.lazy.hold(lazyIo($), server, state.loadout?.mcpServers ?? measured.mcpServers),
+          }),
+        }
+      }
       return { text: formatTrimPlan(measured, state.alerts.budget) }
     } catch {
       return { text: 'Could not measure the context window for this session.' }

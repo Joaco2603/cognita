@@ -488,6 +488,10 @@ export function formatJson(loadout, since, settings) {
         sinceLastSession: since === undefined ? null : since === 'first' ? { isFirst: true } : since,
     }, null, 2);
 }
+/** The levers a trim plan lists, and `/cognita trim --apply` acts on. */
+export function trimLevers(loadout) {
+    return findLevers(loadout.mcpServers, loadout.skillGroups, loadout.memoryFiles, 10);
+}
 /** How to pull one lever, as Markdown lines under its numbered step. */
 function leverSteps(lever) {
     if (lever.kind === 'plugin') {
@@ -515,7 +519,7 @@ function leverSteps(lever) {
 export function formatTrimPlan(loadout, budget) {
     const tokens = (count) => count.toLocaleString('en-US');
     const base = baseTokensOf(loadout);
-    const levers = findLevers(loadout.mcpServers, loadout.skillGroups, loadout.memoryFiles, 10);
+    const levers = trimLevers(loadout);
     const lines = ['## Trim plan', '', `Loaded before any message: **${tokens(base)} tokens**${budget ? ` (budget ${tokens(budget)})` : ''}.`, ''];
     if (levers.length === 0) {
         lines.push('Nothing to trim: every loaded MCP server and plugin has been used in this session, and no instruction file is large.');
@@ -539,6 +543,7 @@ export function formatTrimPlan(loadout, budget) {
         else
             lines.push('', `Still ~${tokens(after - budget)} over budget after every step: look at System tools and Skills in \`/inspector report\`.`);
     }
+    lines.push('', 'Run `/cognita trim --apply` to do the plugin and MCP steps for you (instruction files stay manual).');
     lines.push('', '_"Unused" means no calls in this session so far. Measure after real work, not at startup._');
     return lines.join('\n');
 }

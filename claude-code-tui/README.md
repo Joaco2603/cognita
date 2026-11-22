@@ -41,6 +41,7 @@ Start a new Claude Code session and run `/cognita`. If a session is already runn
 | `/cognita supply` | List every hook and MCP server that runs code here and whether it is pinned to a version (add `json` for scripts) |
 | `/cognita report` | Print what this session loaded into context (estimated; add `full` for an exact count, `json` for scripts) |
 | `/cognita trim` | A step-by-step plan, with commands, to shrink what loads before the first message |
+| `/cognita trim --apply` | Does the plugin and MCP steps of that plan for this project; instruction files stay manual |
 | `/cognita history` | The loadout over the last 20 sessions in this project, with a sparkline |
 | `/cognita cost` | What sessions cost in dollars in this project: total, per day, per session (`json` for scripts) |
 | `/cognita context`, `/cognita access open`, `/cognita agents` | Open the pane on that view |
@@ -235,7 +236,7 @@ Commit a `.cognita.json` at the project root so everyone uses the same rules, li
 
 ## Privacy and safety
 
-- Cognita reads; it never changes your settings. `/cognita trim` prints commands for you to run.
+- Cognita reads; it changes your settings only when you ask. `/cognita trim` prints commands for you to run, and `/cognita trim --apply` runs the plugin and MCP steps for you (this project only, undo lines printed). It never edits your instruction files.
 - The Access check asks the permission system what it *would* answer. No tool runs.
 - Every observing hook only reads the event and passes it on (`next(event)`), inside `try/catch`, so a bug in Cognita can never block a tool call or a prompt.
 - Nothing leaves your machine. Measurements are kept in the plugin's own store, per project, for the "since last session" comparison and the history.
