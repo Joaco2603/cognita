@@ -2,6 +2,18 @@ import { analyzeAccess, formatAccess, formatAccessJson, PROBES, SETTINGS_SOURCES
 import { renderAccess } from './access-view.js'
 import { renderAgents } from './agents-view.js'
 import { renderContext } from './context-view.js'
+import {
+  budgetStatus,
+  budgetWarning,
+  costBySession,
+  costJson,
+  costsOf,
+  dayKey,
+  formatCost,
+  recordCost,
+  spendLine,
+  type CostEntry,
+} from './cost.js'
 import { renderOverview, renderSidebar, renderTabStrip } from './dashboard-view.js'
 import { createLazyMcp, type HeldView, type LazyIo, type LazyMcp } from './lazy-mcp.js'
 import {
@@ -52,6 +64,7 @@ const HELP = [
   '- `/cognita report`: what this session has loaded into context (estimated; `full` for an exact count, `json` for scripts)',
   '- `/cognita trim`: a step-by-step plan, with commands, to shrink what loads before the first message',
   '- `/cognita history`: how the loadout changed across the last sessions in this project',
+  '- `/cognita cost`: what sessions cost in dollars in this project, per day and per session (`json` for scripts)',
   '- `/cognita context` · `/cognita access open`: open the pane on that view',
   '- `/cognita hold [server]`: keep an MCP server off from the next session in this project (no name lists the held ones)',
   '- `/cognita connect [server]`: bring a held server back for this session (no name connects every held one)',
@@ -78,6 +91,14 @@ type State = {
   launchingAgent: boolean
   isStatusLineEnabled: boolean
   alerts: AlertSettings
+  /** Monthly spend budget in USD from CLAUDE_INSPECTOR_SPEND_BUDGET. */
+  spendBudget?: number
+  /** What this session has cost so far, when Claude Code reports it. */
+  sessionCost?: number
+  /** The last cost written to the store, to skip writes that would change nothing. */
+  costSaved: number
+  /** Store writes run one after another so none loses another's update. */
+  costWrite: Promise<void>
   // Context loadout: measured on demand, plus what the observe hooks record.
   usageLog: UsageLog
   loadout?: Loadout
@@ -117,6 +138,8 @@ function createState(): State {
     launchingAgent: false,
     isStatusLineEnabled: true,
     alerts: { growth: DEFAULT_GROWTH_ALERT },
+    costSaved: -1,
+    costWrite: Promise.resolve(),
     usageLog: emptyUsage(),
     loadoutDetail: 'summary',
     measuredAt: '',
@@ -243,6 +266,8 @@ async function startupCheck($: ModApi, state: State): Promise<void> {
     applyLoadout(state, measured, 'summary')
     const alert = startupAlert(measured.loadout, measured.since, state.alerts)
     if (alert) await $.ui.toast(alert)
+    const spendAlert = await spendWarning($, state)
+    if (spendAlert) await $.ui.toast(spendAlert)
   } catch {
     // The startup check is a convenience; /cognita measures again.
   } finally {
@@ -327,12 +352,34 @@ async function runCommand($: ModApi, state: State, event: ModEvent): Promise<{ t
     }
   }
 
+  if (subcommand === 'cost') {
+    try {
+      const sessionId = await $.session.id()
+      const current = (await $.session.usage({})).cost?.usd
+      if (current !== undefined) await saveCost($, state, current, true)
+      const entries = costsOf(await $.store.get(costKey(state.currentDirectory)))
+      const view = { now: new Date(), sessionId, current, budget: state.spendBudget, unavailable: current === undefined }
+      if (options.has('json')) return { text: '```json\n' + costJson(entries, view) + '\n```' }
+      return { text: formatCost(entries, view) }
+    } catch {
+      return { text: 'Could not read the cost of this project.' }
+    }
+  }
+
   if (subcommand === 'history') {
     try {
       // Measuring first adds this session to the trend.
       applyLoadout(state, await readLoadout($, 'summary', state.usageLog, state.currentDirectory, state.lazy), 'summary')
       const trend = trendOf(await $.store.get(`history:${state.currentDirectory}`))
-      return { text: formatHistory(trend, await $.session.id(), state.alerts.budget) }
+      const sessionId = await $.session.id()
+      let entries: CostEntry[] = []
+      try {
+        entries = costsOf(await $.store.get(costKey(state.currentDirectory)))
+      } catch {
+        // History still works without the cost column.
+      }
+      const costs = entries.length > 0 ? costBySession(entries) : undefined
+      return { text: formatHistory(trend, sessionId, state.alerts.budget, costs, costs ? spendLine(entries, new Date()) : undefined) }
     } catch {
       return { text: 'Could not read the loadout history for this project.' }
     }
@@ -506,6 +553,7 @@ export function register(on: ModOn): void {
     state.lazy.setCwd(state.currentDirectory)
     state.isStatusLineEnabled = (await $.env.get('CLAUDE_INSPECTOR_STATUSLINE'))?.trim() !== '0'
     state.alerts = await readAlertSettings($)
+    state.spendBudget = parseSpendBudget(await $.env.get('CLAUDE_INSPECTOR_SPEND_BUDGET'))
     const isStartupCheckEnabled = (await $.env.get('CLAUDE_INSPECTOR_STARTUP_CHECK'))?.trim() !== '0'
     const result = await next?.(event)
     if (isStartupCheckEnabled && event.isInteractive !== false && !state.loadout && !state.measuring) {
@@ -565,6 +613,7 @@ export function register(on: ModOn): void {
         const cost = event.cost as SessionUsage['cost']
         const percent = context?.percent
         const held = state.lazy.pendingNames().length
+        if (cost && typeof cost.usd === 'number') void saveCost($, state, cost.usd)
         $.ui.status(percent === undefined
           ? undefined
           : [`ctx ${Math.round(percent)}%`, cost ? `$${cost.usd.toFixed(2)}` : '', sinceBadge(state.since), held > 0 ? `${held} MCP held` : ''].filter(Boolean).join(' · '))
@@ -664,6 +713,44 @@ async function compareWithLastSession($: ModApi, cwd: string, loadout: Loadout, 
     const { history, baseline } = rememberSnapshot(await $.store.get(key), snapshot)
     await $.store.set(key, history)
     return baseline ? diffLoadout(baseline, snapshot) : 'first'
+  } catch {
+    return undefined
+  }
+}
+
+const costKey = (cwd: string) => `cost:${cwd}`
+
+function parseSpendBudget(value: string | undefined): number | undefined {
+  const number = Number((value ?? '').trim().replace(/^\$/, ''))
+  return Number.isFinite(number) && number > 0 ? number : undefined
+}
+
+/**
+ * Saves what this session has cost into the project's store. Throttled: it
+ * writes only when the cost grew by a cent. Best effort, never throws.
+ */
+function saveCost($: ModApi, state: State, usd: number, force = false): Promise<void> {
+  state.sessionCost = usd
+  if (!state.currentDirectory || (!force && state.costSaved >= 0 && usd < state.costSaved + 0.01)) return state.costWrite
+  state.costSaved = usd
+  state.costWrite = state.costWrite.then(async () => {
+    try {
+      const key = costKey(state.currentDirectory)
+      const { list, changed } = recordCost(await $.store.get(key), await $.session.id(), usd, dayKey(new Date()))
+      if (changed) await $.store.set(key, list)
+    } catch {
+      // Cost tracking is a convenience; a store failure only loses a number.
+    }
+  })
+  return state.costWrite
+}
+
+/** A startup warning when this month's spend is over CLAUDE_INSPECTOR_SPEND_BUDGET. */
+async function spendWarning($: ModApi, state: State): Promise<string | undefined> {
+  if (!state.spendBudget || !state.currentDirectory) return undefined
+  try {
+    const entries = costsOf(await $.store.get(costKey(state.currentDirectory)))
+    return budgetWarning(budgetStatus(entries, state.spendBudget, new Date()))
   } catch {
     return undefined
   }

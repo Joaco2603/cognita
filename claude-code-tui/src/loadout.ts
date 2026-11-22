@@ -548,7 +548,14 @@ export function sparkline(values: number[]): string {
 const signed = (tokens: number) => (tokens > 0 ? '+' : tokens < 0 ? '-' : '±') + Math.abs(tokens).toLocaleString('en-US')
 
 /** Markdown for `/inspector history`: how the loadout moved across this project's sessions. */
-export function formatHistory(trend: TrendPoint[], currentSessionId?: string, budget?: number): string {
+export function formatHistory(
+  trend: TrendPoint[],
+  currentSessionId?: string,
+  budget?: number,
+  /** Cost in USD per session id, plus an optional summary line; adds a `$` column. */
+  costs?: Record<string, number>,
+  spend?: string,
+): string {
   if (trend.length === 0) return 'No measurements saved for this project yet.'
   const values = trend.map((point) => point.baseTokens)
   const first = trend[0]
@@ -568,11 +575,13 @@ export function formatHistory(trend: TrendPoint[], currentSessionId?: string, bu
     const over = trend.filter((point) => point.baseTokens > budget).length
     lines.push(`**Budget:** ${over} of ${trend.length} sessions went over ${budget.toLocaleString('en-US')} tokens.`, '')
   }
-  lines.push('| When | Model | Tokens | Change |', '| --- | --- | ---: | ---: |')
+  if (spend && costs) lines.push(`**${spend}**`, '')
+  lines.push(costs ? '| When | Model | Tokens | Change | $ |' : '| When | Model | Tokens | Change |', costs ? '| --- | --- | ---: | ---: | ---: |' : '| --- | --- | ---: | ---: |')
   const rows = trend.map((point, index) => {
     const change = index === 0 ? '' : signed(point.baseTokens - trend[index - 1].baseTokens)
     const when = formatWhen(point.at) + (point.sessionId === currentSessionId ? ' (this session)' : '')
-    return `| ${when} | ${point.model || 'unknown'} | ${point.baseTokens.toLocaleString('en-US')} | ${change} |`
+    const cost = costs ? ` ${point.sessionId in costs ? '$' + costs[point.sessionId].toFixed(2) : ''} |` : ''
+    return `| ${when} | ${point.model || 'unknown'} | ${point.baseTokens.toLocaleString('en-US')} | ${change} |${cost}`
   })
   lines.push(...rows.reverse())
   return lines.join('\n')
