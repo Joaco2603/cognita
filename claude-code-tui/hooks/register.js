@@ -1,5 +1,6 @@
 import { analyzeAccess, formatAccess, formatAccessJson, PROBES, SETTINGS_SOURCES } from './access.js';
 import { renderAccess } from './access-view.js';
+import { analyzeSupplyChain, formatSupplyChain, formatSupplyChainJson } from './supply-chain.js';
 import { renderAgents } from './agents-view.js';
 import { renderContext } from './context-view.js';
 import { renderOverview, renderSidebar, renderTabStrip } from './dashboard-view.js';
@@ -16,6 +17,7 @@ const HELP = [
     '- `/cognita`: open the Cognita pane (Overview, Context, Access, Agents)',
     '- `/cognita access`: what the agent can reach: tools, MCP servers, risky actions, permission rules, hooks, plugins',
     '- `/cognita access json`: the same as JSON',
+    '- `/cognita supply`: every hook and MCP server that runs code here, and whether it is pinned to a version (`json` for scripts)',
     '- `/cognita report`: what this session has loaded into context (estimated; `full` for an exact count, `json` for scripts)',
     '- `/cognita trim`: a step-by-step plan, with commands, to shrink what loads before the first message',
     '- `/cognita history`: how the loadout changed across the last sessions in this project',
@@ -227,6 +229,17 @@ async function runCommand($, state, event) {
         }
         catch {
             return { text: 'Could not read the tools and permissions of this session.' };
+        }
+    }
+    if (subcommand === 'supply') {
+        try {
+            const report = await readSupplyChain($, state.currentDirectory);
+            if (options.has('json'))
+                return { text: '```json\n' + formatSupplyChainJson(report) + '\n```' };
+            return { text: formatSupplyChain(report) };
+        }
+        catch {
+            return { text: 'Could not read the hooks and MCP servers of this session.' };
         }
     }
     if (subcommand === 'report') {
@@ -570,6 +583,50 @@ async function readAccess($, cwd) {
         $.session.version().then((value) => value.version).catch(() => undefined),
     ]);
     return analyzeAccess({ model, version, tools, probes, settings, commands });
+}
+/**
+ * Reads the hooks, MCP servers and plugins that run code on this machine.
+ * The mod API exposes settings and the tool list but not plugin-contributed
+ * hooks or MCP configs, so what it cannot read is named in the report.
+ * Best effort: every part can fail without losing the rest.
+ */
+async function readSupplyChain($, cwd) {
+    const settings = {};
+    const unreadable = [];
+    await Promise.all(SETTINGS_SOURCES.map(async (source) => {
+        try {
+            settings[source] = await $.settings.read({ source });
+        }
+        catch {
+            // A source that is absent or unreadable adds nothing.
+        }
+    }));
+    let toolServers = [];
+    try {
+        const servers = new Set();
+        for (const tool of await $.tool.list()) {
+            const server = tool.mcp ? /^mcp__(.+?)__/.exec(tool.name)?.[1] : undefined;
+            if (server)
+                servers.add(server);
+        }
+        toolServers = [...servers];
+    }
+    catch {
+        unreadable.push('The tool list, so MCP servers not in your settings are missing.');
+    }
+    const mcpFiles = [];
+    try {
+        const entries = await $.fs.list(cwd || '.');
+        if (entries.some((entry) => entry.name === '.mcp.json')) {
+            // The plugin API can list files but not read them, so its servers stay unknown.
+            unreadable.push('`.mcp.json` exists in this project but the plugin API cannot read files; its servers show only if connected.');
+        }
+    }
+    catch {
+        unreadable.push('`.mcp.json` of this project.');
+    }
+    unreadable.push('Hooks and MCP servers that plugins bring: the plugin API does not expose them. Servers show above as "config not readable".');
+    return analyzeSupplyChain({ settings, mcpFiles, toolServers, unreadable });
 }
 /** Budget and growth warnings from CLAUDE_INSPECTOR_BUDGET and CLAUDE_INSPECTOR_ALERT. */
 async function readAlertSettings($) {

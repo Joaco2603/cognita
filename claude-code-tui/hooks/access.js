@@ -158,7 +158,7 @@ export const VERDICT_MARKS = {
     unknown: '?',
 };
 const ACCESS_ROWS = 15;
-function table(headers, rows) {
+export function table(headers, rows) {
     const escape = (cell) => cell.replaceAll('|', '\\|');
     if (rows.length === 0)
         return ['_None._'];
@@ -168,7 +168,7 @@ function table(headers, rows) {
         ...rows.map((row) => `| ${row.map(escape).join(' | ')} |`),
     ];
 }
-function capped(items, limit = ACCESS_ROWS) {
+export function capped(items, limit = ACCESS_ROWS) {
     return { shown: items.slice(0, limit), rest: Math.max(0, items.length - limit) };
 }
 /** The access report as Markdown, for `/cognita access`. */

@@ -36,6 +36,7 @@ Start a new Claude Code session and run `/cognita`. If a session is already runn
 | `/cognita` | Open the Cognita pane on the Overview |
 | `/cognita access` | Print what the agent can reach and do, as Markdown |
 | `/cognita access json` | The same as JSON, for scripts and CI |
+| `/cognita supply` | List every hook and MCP server that runs code here and whether it is pinned to a version (add `json` for scripts) |
 | `/cognita report` | Print what this session loaded into context (estimated; add `full` for an exact count, `json` for scripts) |
 | `/cognita trim` | A step-by-step plan, with commands, to shrink what loads before the first message |
 | `/cognita history` | The loadout over the last 20 sessions in this project, with a sparkline |
@@ -156,6 +157,23 @@ The fix for that finding is one line in `.claude/settings.json`: `"permissions":
 ### Agents
 
 The subagents of this session, running and finished, with their token use. Open one for its details, or start a new background agent in the project.
+
+## Supply chain
+
+`/cognita supply` (also `/inspector supply`, and `json` for scripts) answers: what code runs on my machine because of my Claude Code setup, and can it change without me noticing?
+
+It lists every hook command (event, matcher, command, settings source) and every MCP server (transport, command or URL, origin), and marks each one:
+
+| Mark | Meaning |
+| --- | --- |
+| `⚠ unpinned` | Fetches code fresh: `npx`, `bunx`, `pnpm dlx`, `yarn dlx`, `uvx` or `pipx run` without an exact version, any `@latest`, `docker run` with no tag or with `:latest`, or `curl ... \| sh` |
+| `● pinned` | An exact version (`pkg@1.2.3`, `pkg==1.2.3`), an image tag or a digest (`image@sha256:...`) |
+| `○ local` | A local path or script |
+| `↗ remote` | An http(s) URL; its code can change on the server's side |
+
+The top line counts the unpinned commands: "N unpinned command(s) download code that can change without notice." Plugins are listed with their marketplace and where that marketplace comes from.
+
+Best effort: the plugin API exposes settings and the tool list, not the hooks or MCP configs that plugins bring, so those servers show as "config not readable" and the report says what it could not read. A project `.mcp.json` is noticed but cannot be read (the API lists files, it does not read them). Cognita never changes your settings.
 
 ## Commands for scripts
 
