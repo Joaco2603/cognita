@@ -102,6 +102,8 @@ type State = {
   sessionCost?: number
   /** The last cost written to the store, to skip writes that would change nothing. */
   costSaved: number
+  /** Whether the last saved cost was marked as a lower bound. */
+  costSavedPartial: boolean
   /** Store writes run one after another so none loses another's update. */
   costWrite: Promise<void>
   /** Team policy from .cognita.json, and what was wrong with the file. */
@@ -149,6 +151,7 @@ function createState(): State {
     isStatusLineEnabled: true,
     alerts: { growth: DEFAULT_GROWTH_ALERT },
     costSaved: -1,
+    costSavedPartial: false,
     costWrite: Promise.resolve(),
     policy: { require: {}, actions: [] },
     policyWarnings: [],
@@ -869,8 +872,11 @@ function parseSpendBudget(value: string | undefined): number | undefined {
  */
 function saveCost($: ModApi, state: State, usd: number, force = false, isPartial = false): Promise<void> {
   state.sessionCost = usd
-  if (!state.currentDirectory || (!force && state.costSaved >= 0 && usd < state.costSaved + 0.01)) return state.costWrite
+  // A newly unpriced model is saved at once, even when the amount barely moved.
+  const isNewlyPartial = isPartial && !state.costSavedPartial
+  if (!state.currentDirectory || (!force && !isNewlyPartial && state.costSaved >= 0 && usd < state.costSaved + 0.01)) return state.costWrite
   state.costSaved = usd
+  state.costSavedPartial = state.costSavedPartial || isPartial
   state.costWrite = state.costWrite.then(async () => {
     try {
       const key = costKey(state.currentDirectory)

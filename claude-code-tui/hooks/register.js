@@ -52,6 +52,7 @@ function createState() {
         isStatusLineEnabled: true,
         alerts: { growth: DEFAULT_GROWTH_ALERT },
         costSaved: -1,
+        costSavedPartial: false,
         costWrite: Promise.resolve(),
         policy: { require: {}, actions: [] },
         policyWarnings: [],
@@ -777,9 +778,12 @@ function parseSpendBudget(value) {
  */
 function saveCost($, state, usd, force = false, isPartial = false) {
     state.sessionCost = usd;
-    if (!state.currentDirectory || (!force && state.costSaved >= 0 && usd < state.costSaved + 0.01))
+    // A newly unpriced model is saved at once, even when the amount barely moved.
+    const isNewlyPartial = isPartial && !state.costSavedPartial;
+    if (!state.currentDirectory || (!force && !isNewlyPartial && state.costSaved >= 0 && usd < state.costSaved + 0.01))
         return state.costWrite;
     state.costSaved = usd;
+    state.costSavedPartial = state.costSavedPartial || isPartial;
     state.costWrite = state.costWrite.then(async () => {
         try {
             const key = costKey(state.currentDirectory);
