@@ -5,6 +5,18 @@ All notable changes to Cognita are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-22
+
+### Added
+- Team policy in the repo: `.cognita.json` at the project root sets the budget, the growth alert and the minimum verdict per action (for example, reading `.env` must ask). It wins over the `CLAUDE_INSPECTOR_*` env vars, and Access reports each violation. A bad file becomes a warning, never a crash.
+- Custom actions: `actions` in `.cognita.json` adds team commands such as `terraform apply` to the Access check.
+- Access asks the permission system about every loaded MCP tool (nothing runs) and lists, per server, which run without asking.
+- Access flags allow rules that are too broad, such as `Bash(*)` or a whole MCP server, with the settings file that defines them.
+- `/cognita supply [json]`: every hook command and MCP server, where it comes from, and whether it is pinned to a version. Unpinned `npx`/`uvx`/`bunx` packages, `@latest` and untagged Docker images are flagged.
+- `/cognita cost [json]`: what sessions cost in dollars in this project, per day and per session; `/cognita history` gets a `$` column. `CLAUDE_INSPECTOR_SPEND_BUDGET` sets a monthly budget.
+- `/cognita doctor` and a load-time compatibility check: if Claude Code lacks an engine API that Cognita needs, a toast names the feature that is off.
+- CI on GitHub Actions (Linux, macOS, Windows) against the latest Claude Code, also weekly.
+
 ## [0.8.0] - 2026-11-21
 
 ### Added

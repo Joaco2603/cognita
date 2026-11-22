@@ -131,6 +131,15 @@ Registrarlo en la sección siguiente para la entrega.
   - Tests: 35 de UI y 48 unitarios, todos en verde.
 
 
+- **2026-11-22 · Cognita para equipos: policy, supply chain, costo y CI (v0.9.0).**
+  - `.cognita.json` en el repo: presupuesto, alerta y veredicto mínimo por acción ("leer `.env` tiene que pedir permiso"), compartido por todo el equipo. Gana sobre las variables de entorno; Access marca cada violación y un archivo inválido es un aviso, nunca un crash.
+  - Access más profundo: acciones propias del equipo (`terraform apply`), cada tool MCP consultada al sistema de permisos sin ejecutarla, y reglas allow demasiado amplias (`Bash(*)`, un servidor MCP entero) con el archivo que las define.
+  - `/cognita supply`: cada hook y servidor MCP, de dónde viene y si está fijado a una versión (`npx paquete@latest` sin versión queda marcado).
+  - `/cognita cost`: costo real en dólares por proyecto, por día y por sesión; columna `$` en `/cognita history`; presupuesto mensual con `CLAUDE_INSPECTOR_SPEND_BUDGET`.
+  - `/cognita doctor` y chequeo de compatibilidad al cargar: si Claude Code no tiene una API del motor, un toast dice qué función queda apagada. CI en GitHub Actions (Linux, macOS, Windows) contra la última versión de Claude Code, también semanal. `CHANGELOG.md` de 0.1.0 a 0.9.0.
+  - Hecho con 4 subagentes en paralelo (sonnet, un worktree cada uno) y merge en la sesión principal. Probado en sesión real: "Policy: Run shell commands must be blocked; it asks first.", tools MCP por servidor, `/cognita doctor` con 20 APIs OK.
+  - Tests: 87 unitarios y 35 de UI, todos en verde; `claude plugin validate` en verde.
+
 ## Cómo usamos AI coding
 
 - **Herramienta:** Claude Code (CLI) en todo el ciclo: diseño, implementación en TypeScript, tests, documentación y pruebas funcionales.

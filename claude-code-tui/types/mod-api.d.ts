@@ -164,6 +164,7 @@ interface ModApi {
     get: (name: string) => Promise<string | undefined>
   }
   fs: {
+    read: (path: string) => Promise<string>
     list: (path?: string) => Promise<Array<{
       name: string
       kind: 'file' | 'directory' | 'other'

@@ -767,8 +767,6 @@ async function probeMcpTools($: ModApi, names: string[]): Promise<Array<{ name: 
 /** Reads and validates .cognita.json from the project root. A missing file is no policy; a bad one is a warning. */
 async function readPolicy($: ModApi): Promise<{ policy: Policy; warnings: string[] }> {
   try {
-    // The bundled type stub lists only `$.fs.list`; the engine also has `$.fs.read`.
-    // @ts-ignore
     const text: string = await $.fs.read(POLICY_FILE)
     return parsePolicy(text)
   } catch {
