@@ -97,6 +97,12 @@ export function parsePolicy(text: string): PolicyLoad {
       })
     }
   }
+
+  // A typo in a key would switch a rule off without a word, so name it.
+  const known = new Set([...BUILTIN_KEYS, ...policy.actions.map((action) => action.key)])
+  for (const key of Object.keys(policy.require)) {
+    if (!known.has(key)) warn(`"require.${key}" matches no built-in or custom action; the rule never applies.`)
+  }
   return { policy, warnings }
 }
 

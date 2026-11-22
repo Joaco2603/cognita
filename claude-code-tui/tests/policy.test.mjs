@@ -57,6 +57,16 @@ test('policyViolations: a probe that could not be checked is reported, a missing
   ])
 })
 
+test('parsePolicy warns for a require key that is neither a built-in nor a declared custom action', () => {
+  const { policy, warnings } = parsePolicy(JSON.stringify({
+    require: { psuh: 'ask', push: 'ask', tf: 'deny' },
+    actions: [{ key: 'tf', tool: 'Bash', input: {} }],
+  }))
+  assert.deepEqual(warnings, ['.cognita.json: "require.psuh" matches no built-in or custom action; the rule never applies.'])
+  assert.equal(policy.require.psuh, 'ask')
+  assert.deepEqual(parsePolicy(JSON.stringify({ require: { tf: 'ask' } })).warnings.length, 1)
+})
+
 test('custom actions are validated and become probes', () => {
   const { policy, warnings } = parsePolicy(JSON.stringify({ actions: [
     { key: 'tf', label: 'Terraform apply', tool: 'Bash', input: { command: 'terraform apply' }, risky: true },
