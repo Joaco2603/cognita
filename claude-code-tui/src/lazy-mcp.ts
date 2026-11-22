@@ -17,7 +17,14 @@ export type LazyIo = {
   set: (key: string, value: unknown) => Promise<void>
   connect: (server: string) => Promise<{ isConnected: true; server: string } | { isConnected: false; reason: string; message: string }>
 }
-export type McpUsage = { sessionId: string; servers: Record<string, { loadedIn: number; usedIn: number }> }
+type ServerUsage = { loadedIn: number; usedIn: number; /** Sessions that already counted a call, newest last. */ usedBy?: string[] }
+/** `recent` lists the sessions already counted as loaded (newest last); `sessionId` is the last of them, kept for old readers. */
+export type McpUsage = { sessionId: string; recent?: string[]; servers: Record<string, ServerUsage> }
+
+/** How many session ids the usage keeps to count each session once. */
+export const RECENT_SESSIONS = 50
+const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item !== '') : [])
+const newest = (list: readonly string[], id: string) => [...list.filter((item) => item !== id), id].slice(-RECENT_SESSIONS)
 
 /** The tool-name spelling of an MCP server name: `plugin:a:b` becomes `plugin_a_b`. */
 export function toolName(name: string): string {
@@ -50,18 +57,25 @@ function readUsage(stored: unknown): McpUsage {
       if (entry && Number.isFinite(entry.loadedIn) && Number.isFinite(entry.usedIn)) {
         const key = serverKey(name)
         const seen = servers[key]
-        servers[key] = { loadedIn: (seen?.loadedIn ?? 0) + entry.loadedIn, usedIn: (seen?.usedIn ?? 0) + entry.usedIn }
+        const usedBy = [...new Set([...(seen?.usedBy ?? []), ...strings(entry.usedBy)])].slice(-RECENT_SESSIONS)
+        servers[key] = {
+          loadedIn: (seen?.loadedIn ?? 0) + entry.loadedIn,
+          usedIn: (seen?.usedIn ?? 0) + entry.usedIn,
+          ...(usedBy.length > 0 ? { usedBy } : {}),
+        }
       }
     }
   }
-  return { sessionId: typeof raw?.sessionId === 'string' ? raw.sessionId : '', servers }
+  const sessionId = typeof raw?.sessionId === 'string' ? raw.sessionId : ''
+  const recent = strings(raw?.recent)
+  return { sessionId, recent: recent.length > 0 || !sessionId ? recent : [sessionId], servers }
 }
 
 /** Counts each measured server as loaded once per session; the same session again changes nothing. */
 export function countLoaded(stored: unknown, sessionId: string, servers: readonly string[]): McpUsage {
   const usage = readUsage(stored)
-  if (usage.sessionId === sessionId) return usage
-  const next: McpUsage = { sessionId, servers: { ...usage.servers } }
+  if (usage.recent?.includes(sessionId)) return usage
+  const next: McpUsage = { sessionId, recent: newest(usage.recent ?? [], sessionId), servers: { ...usage.servers } }
   for (const name of new Set(servers.map(serverKey))) {
     const entry = next.servers[name] ?? { loadedIn: 0, usedIn: 0 }
     next.servers[name] = { ...entry, loadedIn: entry.loadedIn + 1 }
@@ -69,11 +83,14 @@ export function countLoaded(stored: unknown, sessionId: string, servers: readonl
   return next
 }
 
-export function countUsed(stored: unknown, server: string): McpUsage {
+/** Counts a call of `server`; with a session id, each session counts at most once per server. */
+export function countUsed(stored: unknown, server: string, sessionId = ''): McpUsage {
   const usage = readUsage(stored)
   const key = serverKey(server)
   const entry = usage.servers[key] ?? { loadedIn: 0, usedIn: 0 }
-  return { ...usage, servers: { ...usage.servers, [key]: { ...entry, usedIn: entry.usedIn + 1 } } }
+  if (sessionId && entry.usedBy?.includes(sessionId)) return usage
+  const usedBy = sessionId ? { usedBy: newest(entry.usedBy ?? [], sessionId) } : {}
+  return { ...usage, servers: { ...usage.servers, [key]: { ...entry, ...usedBy, usedIn: entry.usedIn + 1 } } }
 }
 
 /** Servers worth holding: loaded in enough sessions here and never called, not held already. */
@@ -97,6 +114,7 @@ export function createLazyMcp() {
   const connectedNow = new Set<string>()
   const usedThisSession = new Set<string>()
   let cwd = ''
+  let sessionNow = ''
   let startList: Promise<string[]> | undefined
   let writes: Promise<unknown> = Promise.resolve()
   let listLock: Promise<unknown> = Promise.resolve()
@@ -266,11 +284,12 @@ export function createLazyMcp() {
 
     /** Counts this session's measured servers as loaded, once per session. Best effort. */
     noteLoaded(io: LazyIo, sessionId: string, servers: readonly string[]): Promise<unknown> {
+      sessionNow = sessionId
       return (writes = writes.then(async () => {
         const dir = await folder(io)
         if (!dir) return
         const stored = await io.get(`mcp-usage:${dir}`)
-        if (readUsage(stored).sessionId !== sessionId) await io.set(`mcp-usage:${dir}`, countLoaded(stored, sessionId, servers))
+        if (!readUsage(stored).recent?.includes(sessionId)) await io.set(`mcp-usage:${dir}`, countLoaded(stored, sessionId, servers))
       }).catch(() => undefined))
     },
 
@@ -281,7 +300,7 @@ export function createLazyMcp() {
       writes = writes.then(async () => {
         const dir = await folder(io)
         if (!dir) return
-        await io.set(`mcp-usage:${dir}`, countUsed(await io.get(`mcp-usage:${dir}`), server))
+        await io.set(`mcp-usage:${dir}`, countUsed(await io.get(`mcp-usage:${dir}`), server, sessionNow))
       }).catch(() => undefined)
     },
   }

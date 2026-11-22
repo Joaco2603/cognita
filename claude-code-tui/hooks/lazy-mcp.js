@@ -1,6 +1,10 @@
 /** Servers loaded in this many sessions here without a single call are worth holding. */
 export const HOLD_AFTER_SESSIONS = 3;
 const HOLD_MESSAGE = 'Held for this project by Cognita. Bring it back: /cognita connect <server>';
+/** How many session ids the usage keeps to count each session once. */
+export const RECENT_SESSIONS = 50;
+const strings = (value) => (Array.isArray(value) ? value.filter((item) => typeof item === 'string' && item !== '') : []);
+const newest = (list, id) => [...list.filter((item) => item !== id), id].slice(-RECENT_SESSIONS);
 /** The tool-name spelling of an MCP server name: `plugin:a:b` becomes `plugin_a_b`. */
 export function toolName(name) {
     return name.replaceAll(/[^A-Za-z0-9_-]/g, '_');
@@ -29,29 +33,40 @@ function readUsage(stored) {
             if (entry && Number.isFinite(entry.loadedIn) && Number.isFinite(entry.usedIn)) {
                 const key = serverKey(name);
                 const seen = servers[key];
-                servers[key] = { loadedIn: (seen?.loadedIn ?? 0) + entry.loadedIn, usedIn: (seen?.usedIn ?? 0) + entry.usedIn };
+                const usedBy = [...new Set([...(seen?.usedBy ?? []), ...strings(entry.usedBy)])].slice(-RECENT_SESSIONS);
+                servers[key] = {
+                    loadedIn: (seen?.loadedIn ?? 0) + entry.loadedIn,
+                    usedIn: (seen?.usedIn ?? 0) + entry.usedIn,
+                    ...(usedBy.length > 0 ? { usedBy } : {}),
+                };
             }
         }
     }
-    return { sessionId: typeof raw?.sessionId === 'string' ? raw.sessionId : '', servers };
+    const sessionId = typeof raw?.sessionId === 'string' ? raw.sessionId : '';
+    const recent = strings(raw?.recent);
+    return { sessionId, recent: recent.length > 0 || !sessionId ? recent : [sessionId], servers };
 }
 /** Counts each measured server as loaded once per session; the same session again changes nothing. */
 export function countLoaded(stored, sessionId, servers) {
     const usage = readUsage(stored);
-    if (usage.sessionId === sessionId)
+    if (usage.recent?.includes(sessionId))
         return usage;
-    const next = { sessionId, servers: { ...usage.servers } };
+    const next = { sessionId, recent: newest(usage.recent ?? [], sessionId), servers: { ...usage.servers } };
     for (const name of new Set(servers.map(serverKey))) {
         const entry = next.servers[name] ?? { loadedIn: 0, usedIn: 0 };
         next.servers[name] = { ...entry, loadedIn: entry.loadedIn + 1 };
     }
     return next;
 }
-export function countUsed(stored, server) {
+/** Counts a call of `server`; with a session id, each session counts at most once per server. */
+export function countUsed(stored, server, sessionId = '') {
     const usage = readUsage(stored);
     const key = serverKey(server);
     const entry = usage.servers[key] ?? { loadedIn: 0, usedIn: 0 };
-    return { ...usage, servers: { ...usage.servers, [key]: { ...entry, usedIn: entry.usedIn + 1 } } };
+    if (sessionId && entry.usedBy?.includes(sessionId))
+        return usage;
+    const usedBy = sessionId ? { usedBy: newest(entry.usedBy ?? [], sessionId) } : {};
+    return { ...usage, servers: { ...usage.servers, [key]: { ...entry, ...usedBy, usedIn: entry.usedIn + 1 } } };
 }
 /** Servers worth holding: loaded in enough sessions here and never called, not held already. */
 export function suggestions(usage, held) {
@@ -72,6 +87,7 @@ export function createLazyMcp() {
     const connectedNow = new Set();
     const usedThisSession = new Set();
     let cwd = '';
+    let sessionNow = '';
     let startList;
     let writes = Promise.resolve();
     let listLock = Promise.resolve();
@@ -241,12 +257,13 @@ export function createLazyMcp() {
         pendingNames: () => pending().map(nameOf),
         /** Counts this session's measured servers as loaded, once per session. Best effort. */
         noteLoaded(io, sessionId, servers) {
+            sessionNow = sessionId;
             return (writes = writes.then(async () => {
                 const dir = await folder(io);
                 if (!dir)
                     return;
                 const stored = await io.get(`mcp-usage:${dir}`);
-                if (readUsage(stored).sessionId !== sessionId)
+                if (!readUsage(stored).recent?.includes(sessionId))
                     await io.set(`mcp-usage:${dir}`, countLoaded(stored, sessionId, servers));
             }).catch(() => undefined));
         },
@@ -259,7 +276,7 @@ export function createLazyMcp() {
                 const dir = await folder(io);
                 if (!dir)
                     return;
-                await io.set(`mcp-usage:${dir}`, countUsed(await io.get(`mcp-usage:${dir}`), server));
+                await io.set(`mcp-usage:${dir}`, countUsed(await io.get(`mcp-usage:${dir}`), server, sessionNow));
             }).catch(() => undefined);
         },
     };

@@ -152,3 +152,27 @@ test('two quick holds and a hold racing a release all stick', async () => {
   await Promise.all([lazy.release($, 'a', servers), lazy.hold($, 'c', servers)])
   assert.deepEqual(store.get('held:/proj'), ['b', 'c'])
 })
+
+test('alternating sessions count each session once, and a session counts a server call once', async () => {
+  const { $, store } = fakeApi()
+  const a = createLazyMcp()
+  const b = createLazyMcp()
+  for (const [lazy, id] of [[a, 'A'], [b, 'B'], [a, 'A'], [b, 'B']]) await lazy.noteLoaded($, id, ['gh'])
+  assert.equal(store.get('mcp-usage:/proj').servers.gh.loadedIn, 2)
+  a.noteUsed($, 'gh')
+  await a.noteLoaded($, 'A', ['gh'])
+  const again = createLazyMcp()
+  await again.noteLoaded($, 'A', ['gh'])
+  again.noteUsed($, 'gh')
+  await again.noteLoaded($, 'A', ['gh'])
+  assert.equal(store.get('mcp-usage:/proj').servers.gh.usedIn, 1)
+  const bounded = Array.from({ length: 80 }, (_, index) => `s${index}`)
+  for (const id of bounded) await a.noteLoaded($, id, ['gh'])
+  assert.ok(store.get('mcp-usage:/proj').recent.length <= 50)
+})
+
+test('usage stored in the old shape (one sessionId) still reads and dedupes that session', () => {
+  const old = { sessionId: 'S', servers: { gh: { loadedIn: 2, usedIn: 0 } } }
+  assert.equal(countLoaded(old, 'S', ['gh']).servers.gh.loadedIn, 2)
+  assert.equal(countLoaded(old, 'T', ['gh']).servers.gh.loadedIn, 3)
+})
