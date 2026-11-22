@@ -325,3 +325,12 @@ test('the Overview card shows tagged items crowded out', async ($, on) => {
 
   expect(await ui.find({ text: 'Tagged: 3 items · ⚠ crowded out: c1' })).toBeDefined()
 })
+
+test('/cognita compact quotes every line of a focus that lists tagged items', async ($, on) => {
+  const session: Session = { percent: 80, messages: tagged, compacted: [], toasts: [] }
+  await start($, on, session)
+  const text = await run($, 'compact')
+
+  expect(text).toContain('\n>\n> Tagged items to keep:')
+  expect(text).toContain('\n> [c1] constraint: Do not touch main')
+})

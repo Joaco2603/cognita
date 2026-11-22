@@ -492,14 +492,19 @@ async function compactCommand($: ModApi, state: State): Promise<CommandAnswer> {
   if (!afterCommand($, () => compactNow($, state, focus))) {
     return { text: `Run this to compact, keeping the goal and the plan:\n\n${fallback}`, isTextDisplayOnly: true }
   }
-  return { text: `Compacting, keeping:\n\n> ${focus}\n\nIf it does not start, run:\n\n${fallback}`, isTextDisplayOnly: true }
+  return { text: `Compacting, keeping:\n\n${blockquote(focus)}\n\nIf it does not start, run:\n\n${fallback}`, isTextDisplayOnly: true }
+}
+
+/** Quotes every line, so a multi-line text stays one Markdown quote. */
+function blockquote(text: string): string {
+  return text.split('\n').map((line) => (line ? `> ${line}` : '>')).join('\n')
 }
 
 function sendCommand($: ModApi, prompt: string): CommandAnswer {
   if (!afterCommand($, () => submitNow($, prompt))) {
-    return { text: `Paste this as your next message:\n\n> ${prompt}`, isTextDisplayOnly: true }
+    return { text: `Paste this as your next message:\n\n${blockquote(prompt)}`, isTextDisplayOnly: true }
   }
-  return { text: `Sending this to Claude:\n\n> ${prompt}`, isTextDisplayOnly: true }
+  return { text: `Sending this to Claude:\n\n${blockquote(prompt)}`, isTextDisplayOnly: true }
 }
 
 async function compactFromPane($: ModApi, state: State): Promise<void> {
