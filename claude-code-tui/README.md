@@ -39,6 +39,7 @@ Start a new Claude Code session and run `/cognita`. If a session is already runn
 | `/cognita report` | Print what this session loaded into context (estimated; add `full` for an exact count, `json` for scripts) |
 | `/cognita trim` | A step-by-step plan, with commands, to shrink what loads before the first message |
 | `/cognita history` | The loadout over the last 20 sessions in this project, with a sparkline |
+| `/cognita cost` | What sessions cost in dollars in this project: total, per day, per session (`json` for scripts) |
 | `/cognita context`, `/cognita access open`, `/cognita agents` | Open the pane on that view |
 | `/cognita help` | List the subcommands |
 
@@ -158,6 +159,15 @@ The subagents of this session, running and finished, with their token use. Open 
 - `/cognita trim` prints the exact command for each step, such as `claude plugin disable cloudflare --scope local` (this project only, with the undo command).
 - Set `CLAUDE_INSPECTOR_BUDGET=30k` and the report says whether what loads before the first message fits.
 
+## Cost
+
+Claude Code reports what the session has cost in USD. Cognita keeps the highest value seen for each session, with its local day, in the plugin's own store per project (the last 200 sessions). Writes happen only when the cost grows by a cent.
+
+- `/cognita cost` shows the project total, the last 14 days with a sparkline, the last 20 sessions, the average per session and this session so far. `/cognita cost json` prints the same data for scripts.
+- `/cognita history` adds a `$` column per session and a line such as `Spend: $12.40 in 9 sessions · today $1.10`.
+- Set `CLAUDE_INSPECTOR_SPEND_BUDGET=50` (USD per month) to see the share used this month in `/cognita cost`, and a startup toast when the month is over it.
+- If your Claude Code version does not report a cost, `/cognita cost` says so and nothing else changes.
+
 ## Status line and startup check
 
 - **Status line.** `ctx 42% · $0.31 · +3.4k vs last` after every measurement (the last part only when the loadout changed).
@@ -169,6 +179,7 @@ The subagents of this session, running and finished, with their token use. Open 
 | --- | --- | --- |
 | `CLAUDE_INSPECTOR_BUDGET` | none | Tokens that may load before the first message, such as `30000`, `30k` or `1.5M` |
 | `CLAUDE_INSPECTOR_ALERT` | `2000` | Growth since the last session that raises a startup toast; `0` turns growth alerts off |
+| `CLAUDE_INSPECTOR_SPEND_BUDGET` | none | Monthly spend in USD, such as `50`; `/cognita cost` shows the share used and a startup toast warns when over |
 | `CLAUDE_INSPECTOR_STARTUP_CHECK` | on | Set it to `0` to skip the background measurement at session start |
 | `CLAUDE_INSPECTOR_STATUSLINE` | on | Set it to `0` to keep the status line untouched |
 

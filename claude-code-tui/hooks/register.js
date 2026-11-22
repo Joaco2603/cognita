@@ -2,6 +2,7 @@ import { analyzeAccess, formatAccess, formatAccessJson, PROBES, SETTINGS_SOURCES
 import { renderAccess } from './access-view.js';
 import { renderAgents } from './agents-view.js';
 import { renderContext } from './context-view.js';
+import { budgetStatus, budgetWarning, costBySession, costJson, costsOf, dayKey, formatCost, recordCost, spendLine, } from './cost.js';
 import { renderOverview, renderSidebar, renderTabStrip } from './dashboard-view.js';
 import { DEFAULT_GROWTH_ALERT, diffLoadout, emptyUsage, formatHistory, formatJson, formatTrimPlan, formatReport, measurePrompt, recordSkillUse, recordToolCall, parseTokens, rememberSnapshot, sinceBadge, startupAlert, summarize, toSnapshot, trendOf, } from './loadout.js';
 import { basename, } from './utils.js';
@@ -18,6 +19,7 @@ const HELP = [
     '- `/cognita report`: what this session has loaded into context (estimated; `full` for an exact count, `json` for scripts)',
     '- `/cognita trim`: a step-by-step plan, with commands, to shrink what loads before the first message',
     '- `/cognita history`: how the loadout changed across the last sessions in this project',
+    '- `/cognita cost`: what sessions cost in dollars in this project, per day and per session (`json` for scripts)',
     '- `/cognita context` · `/cognita access open`: open the pane on that view',
     '- `/cognita help`: this list',
     '',
@@ -40,6 +42,8 @@ function createState() {
         launchingAgent: false,
         isStatusLineEnabled: true,
         alerts: { growth: DEFAULT_GROWTH_ALERT },
+        costSaved: -1,
+        costWrite: Promise.resolve(),
         usageLog: emptyUsage(),
         loadoutDetail: 'summary',
         measuredAt: '',
@@ -168,6 +172,9 @@ async function startupCheck($, state) {
         const alert = startupAlert(measured.loadout, measured.since, state.alerts);
         if (alert)
             await $.ui.toast(alert);
+        const spendAlert = await spendWarning($, state);
+        if (spendAlert)
+            await $.ui.toast(spendAlert);
     }
     catch {
         // The startup check is a convenience; /cognita measures again.
@@ -243,12 +250,37 @@ async function runCommand($, state, event) {
             return { text: 'Could not measure the context window for this session.' };
         }
     }
+    if (subcommand === 'cost') {
+        try {
+            const sessionId = await $.session.id();
+            const current = (await $.session.usage({})).cost?.usd;
+            if (current !== undefined)
+                await saveCost($, state, current, true);
+            const entries = costsOf(await $.store.get(costKey(state.currentDirectory)));
+            const view = { now: new Date(), sessionId, current, budget: state.spendBudget, unavailable: current === undefined };
+            if (options.has('json'))
+                return { text: '```json\n' + costJson(entries, view) + '\n```' };
+            return { text: formatCost(entries, view) };
+        }
+        catch {
+            return { text: 'Could not read the cost of this project.' };
+        }
+    }
     if (subcommand === 'history') {
         try {
             // Measuring first adds this session to the trend.
             applyLoadout(state, await readLoadout($, 'summary', state.usageLog, state.currentDirectory), 'summary');
             const trend = trendOf(await $.store.get(`history:${state.currentDirectory}`));
-            return { text: formatHistory(trend, await $.session.id(), state.alerts.budget) };
+            const sessionId = await $.session.id();
+            let entries = [];
+            try {
+                entries = costsOf(await $.store.get(costKey(state.currentDirectory)));
+            }
+            catch {
+                // History still works without the cost column.
+            }
+            const costs = entries.length > 0 ? costBySession(entries) : undefined;
+            return { text: formatHistory(trend, sessionId, state.alerts.budget, costs, costs ? spendLine(entries, new Date()) : undefined) };
         }
         catch {
             return { text: 'Could not read the loadout history for this project.' };
@@ -406,6 +438,7 @@ export function register(on) {
         state.currentDirectory = event.cwd ?? '';
         state.isStatusLineEnabled = (await $.env.get('CLAUDE_INSPECTOR_STATUSLINE'))?.trim() !== '0';
         state.alerts = await readAlertSettings($);
+        state.spendBudget = parseSpendBudget(await $.env.get('CLAUDE_INSPECTOR_SPEND_BUDGET'));
         const isStartupCheckEnabled = (await $.env.get('CLAUDE_INSPECTOR_STARTUP_CHECK'))?.trim() !== '0';
         const result = await next?.(event);
         if (isStartupCheckEnabled && event.isInteractive !== false && !state.loadout && !state.measuring) {
@@ -458,6 +491,8 @@ export function register(on) {
                 const context = event.context;
                 const cost = event.cost;
                 const percent = context?.percent;
+                if (cost && typeof cost.usd === 'number')
+                    void saveCost($, state, cost.usd);
                 $.ui.status(percent === undefined
                     ? undefined
                     : [`ctx ${Math.round(percent)}%`, cost ? `$${cost.usd.toFixed(2)}` : '', sinceBadge(state.since)].filter(Boolean).join(' · '));
@@ -540,6 +575,45 @@ async function compareWithLastSession($, cwd, loadout) {
         const { history, baseline } = rememberSnapshot(await $.store.get(key), snapshot);
         await $.store.set(key, history);
         return baseline ? diffLoadout(baseline, snapshot) : 'first';
+    }
+    catch {
+        return undefined;
+    }
+}
+const costKey = (cwd) => `cost:${cwd}`;
+function parseSpendBudget(value) {
+    const number = Number((value ?? '').trim().replace(/^\$/, ''));
+    return Number.isFinite(number) && number > 0 ? number : undefined;
+}
+/**
+ * Saves what this session has cost into the project's store. Throttled: it
+ * writes only when the cost grew by a cent. Best effort, never throws.
+ */
+function saveCost($, state, usd, force = false) {
+    state.sessionCost = usd;
+    if (!state.currentDirectory || (!force && state.costSaved >= 0 && usd < state.costSaved + 0.01))
+        return state.costWrite;
+    state.costSaved = usd;
+    state.costWrite = state.costWrite.then(async () => {
+        try {
+            const key = costKey(state.currentDirectory);
+            const { list, changed } = recordCost(await $.store.get(key), await $.session.id(), usd, dayKey(new Date()));
+            if (changed)
+                await $.store.set(key, list);
+        }
+        catch {
+            // Cost tracking is a convenience; a store failure only loses a number.
+        }
+    });
+    return state.costWrite;
+}
+/** A startup warning when this month's spend is over CLAUDE_INSPECTOR_SPEND_BUDGET. */
+async function spendWarning($, state) {
+    if (!state.spendBudget || !state.currentDirectory)
+        return undefined;
+    try {
+        const entries = costsOf(await $.store.get(costKey(state.currentDirectory)));
+        return budgetWarning(budgetStatus(entries, state.spendBudget, new Date()));
     }
     catch {
         return undefined;
