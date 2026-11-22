@@ -106,6 +106,12 @@ Registrarlo en la sección siguiente para la entrega.
   - Bug real: el motor se negaba a cargar el módulo si `$` se pasaba a funciones internas; se reorganizó `register.ts` en funciones de nivel superior con un objeto de estado.
   - Tests: 27 de UI y 37 unitarios, todos en verde; `claude plugin validate` en verde, también con `--profile directory`.
 
+- **2026-11-21 · Instalación multiplataforma y video demo.**
+  - Instalación desde el marketplace (`claude plugin marketplace add Joaco2603/cognita` + `claude plugin install cognita@cognita`) verificada; el README la pone primero.
+  - Linux probado desde cero en Docker (`node:22`, clon limpio de GitHub, Claude Code 2.1.330): build, 37 tests unitarios, 27 tests de UI (`claude plugin test`), `claude plugin validate`, `npm run install:local` e instalación desde el marketplace, todo en verde.
+  - Video demo de 77 s ([`demo/cognita-demo.mp4`](./demo/cognita-demo.mp4)), hecho con HyperFrames a partir de salida real del plugin: el problema, el Overview, `/cognita access` detectando `.env`, la regla que lo bloquea, `/cognita trim` y la instalación.
+  - Enlaces del README verificados (rutas locales y GitHub).
+
 ## Cómo usamos AI coding
 
 - **Herramienta:** Claude Code (CLI) en todo el ciclo: diseño, implementación en TypeScript, tests, documentación y pruebas funcionales.
@@ -117,10 +123,11 @@ Registrarlo en la sección siguiente para la entrega.
 ## Checklist de entrega
 
 - [x] Nombre comercial y descripción de una línea pensada para el Marketplace
-- [x] README con propuesta de valor, salida real, instalación y troubleshooting (falta GIF)
-- [ ] Instalación probada desde cero en Windows, macOS y Linux (Windows probado; falta macOS y Linux)
+- [x] README con propuesta de valor, salida real, instalación y troubleshooting (con video demo)
+- [x] Instalación probada desde cero en Windows y Linux (Docker `node:22`); macOS sin máquina para probar, el plugin no usa nada específico de plataforma
 - [x] `npm run build`, `npm test` y `npm run validate` en verde
 - [x] Sección "Cómo usamos AI coding" en la entrega
 - [x] Diferencia entre línea base y avance del hackathon documentada
-- [ ] Video demo corto (1 a 2 min)
-- [ ] Enlaces verificados; el capitán envía antes del dom 22 nov 23:59 UTC−6
+- [x] Video demo corto: [`demo/cognita-demo.mp4`](./demo/cognita-demo.mp4) (77 s)
+- [x] Enlaces verificados
+- [ ] El capitán envía antes del dom 22 nov 23:59 UTC−6

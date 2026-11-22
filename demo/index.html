@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Cognita demo</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      :root {
+        --ground: #14151c;
+        --panel: #1e1f29;
+        --panel-edge: #2c2e3b;
+        --ink: #f4e9e1;
+        --dim: #9097a6;
+        --accent: #d97757;
+        --ok: #7ac78a;
+        --warn: #e5b454;
+        --ask: #8fb3e8;
+        --mono: Consolas, monospace;
+        --sans: sans-serif;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--ground); }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--ground); color: var(--ink); font-family: var(--sans); }
+      .clip { position: absolute; inset: 0; }
+      .scene { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 36px; padding: 60px 110px; }
+      .kicker { font-size: 26px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+      .headline { font-size: 58px; font-weight: 700; letter-spacing: -0.02em; text-align: center; max-width: 1600px; line-height: 1.15; }
+      .headline em { font-style: normal; color: var(--accent); }
+      .term { width: 1700px; background: var(--panel); border: 2px solid var(--panel-edge); border-radius: 18px; overflow: hidden; }
+      .bar { height: 46px; display: flex; align-items: center; gap: 12px; padding: 0 22px; background: #252633; }
+      .dot { width: 14px; height: 14px; border-radius: 7px; background: #3a3c4c; }
+      .bar span { margin-left: 14px; font-family: var(--mono); font-size: 20px; color: var(--dim); }
+      .body { padding: 26px 34px 30px; font-family: var(--mono); font-size: 27px; line-height: 1.42; white-space: pre; }
+      .cmd { color: var(--ink); display: block; }
+      .cmd b { color: var(--accent); }
+      .typed { display: inline-block; }
+      .ln { display: block; color: var(--ink); }
+      .d { color: var(--dim); }
+      .a { color: var(--accent); }
+      .ok { color: var(--ok); }
+      .w { color: var(--warn); }
+      .q { color: var(--ask); }
+      .h { font-weight: 700; }
+      .hl { display: block; border-radius: 6px; }
+      .small .body { font-size: 26px; line-height: 1.36; }
+      .pane { white-space: normal; }
+      .pane .cmd { margin-bottom: 14px; }
+      .cols { display: flex; gap: 40px; }
+      .side { width: 330px; white-space: pre; }
+      .gap { margin-top: 22px; }
+      .cards { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+      .card { border: 2px solid var(--panel-edge); border-radius: 12px; padding: 10px 20px; }
+      .card .row { display: flex; justify-content: space-between; }
+      .logo { width: 220px; height: 220px; display: block; }
+      .title { font-size: 132px; font-weight: 800; letter-spacing: -0.04em; }
+      .sub { font-size: 44px; color: var(--dim); text-align: center; max-width: 1500px; line-height: 1.3; }
+      .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 22px; max-width: 1600px; }
+      .chip { font-family: var(--mono); font-size: 34px; padding: 18px 30px; border-radius: 14px; background: var(--panel); border: 2px solid var(--panel-edge); }
+      .chip b { color: var(--accent); }
+      .note { font-size: 34px; color: var(--dim); text-align: center; max-width: 1500px; line-height: 1.35; }
+      .note b { color: var(--ink); }
+      .foot { font-size: 30px; color: var(--dim); font-family: var(--mono); }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="77" data-width="1920" data-height="1080">
+
+      <!-- 1. Title -->
+      <section id="s1" class="clip" data-start="0" data-duration="6" data-track-index="0">
+        <div class="scene" id="s1-in">
+          <img id="s1-logo" class="logo" src="assets/icon.png" alt="Cognita" />
+          <div id="s1-title" class="title">Cognita</div>
+          <div id="s1-sub" class="sub" data-hold>See everything your Claude Code agent has access to.</div>
+        </div>
+      </section>
+
+      <!-- 2. Problem -->
+      <section id="s2" class="clip" data-start="6" data-duration="8" data-track-index="0">
+        <div class="scene" id="s2-in">
+          <div class="kicker" id="s2-k">The problem</div>
+          <div class="headline" id="s2-h">Every session starts with things <em>you didn't choose on purpose</em>.</div>
+          <div class="chips" id="s2-chips">
+            <div class="chip">CLAUDE.md files</div>
+            <div class="chip"><b>512</b> tools from MCP servers</div>
+            <div class="chip"><b>59</b> plugin skills</div>
+            <div class="chip"><b>14</b> hooks</div>
+            <div class="chip">months of permission rules</div>
+          </div>
+          <div class="note" id="s2-n" data-hold>What fills the context? What can the agent do <b>without asking you</b>?</div>
+        </div>
+      </section>
+
+      <!-- 3. Overview pane -->
+      <section id="s3" class="clip" data-start="14" data-duration="16" data-track-index="0">
+        <div class="scene" id="s3-in">
+          <div class="headline" id="s3-h">One pane, inside the session: <em>/cognita</em></div>
+          <div class="note" id="s3-n">Context, access and agents at a glance. Keys <b>1–4</b> open each view.</div>
+          <div class="term small" id="s3-t">
+            <div class="bar" data-layout-ignore><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>claude · my-app</span></div>
+            <div class="body pane"><span class="cmd"><b>❯ </b><span class="typed" id="s3-cmd">/cognita</span></span>
+<div class="cols ln">
+<div class="side"><div class="a">◆ Cognita</div><div class="d">what your agent sees</div><div class="gap d">PROJECT</div><div>my-app</div><div>claude-opus-5-5</div><div class="gap d">VIEWS</div><div class="a">▸ 1 Overview</div><div>  2 Context</div><div>  3 Access</div><div>  4 Agents</div></div>
+<div class="cards"><div class="d">WHAT YOUR AGENT SEES AND CAN DO</div>
+<div class="card hl" id="s3-c1"><div class="row"><b>CONTEXT</b><span class="d">details → 2</span></div><div><span class="a">███▌</span><span class="d">················</span> 17% of 200k</div><div id="s3-tok">33.7k tokens load before your first message</div><div>3 instruction files · 9 MCP servers · 59 skills</div><div class="w">⚠ 1.7k tokens loaded but never used this session</div></div>
+<div class="card hl" id="s3-c2"><div class="row"><b>ACCESS</b><span class="d">details → 3</span></div><div>512 tools · 9 MCP servers · 120 slash commands</div><div>mode default · 38 permission rules · 14 hooks</div><div class="w">⚠ Runs without asking: read .env secrets</div></div>
+<div class="card hl" id="s3-c3"><div class="row"><b>AGENTS</b><span class="d">details → 4</span></div><div>No subagents in this session yet.</div></div>
+<div class="d">1-4 switch views · r refresh · Esc close</div></div>
+</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Access -->
+      <section id="s4" class="clip" data-start="30" data-duration="16" data-track-index="0">
+        <div class="scene" id="s4-in">
+          <div class="headline" id="s4-h">What can it do <em>without asking you</em>?</div>
+          <div class="term" id="s4-t">
+            <div class="bar" data-layout-ignore><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>claude · my-app</span></div>
+            <div class="body"><span class="cmd"><b>❯ </b><span class="typed" id="s4-cmd">/cognita access</span></span><span class="ln"> </span><span class="ln h">## What this agent can do</span><span class="ln d">Model claude-haiku-5-5 · Claude Code 2.1.330 · permission mode default</span><span class="ln"> </span><span class="ln w">⚠ 1 risky action runs without asking: read .env secrets.</span><span class="ln w">⚠ 14 hook commands from your settings run on your machine.</span><span class="ln"> </span><span class="ln d">Action (asked of the permission system, nothing was run)   Verdict</span><span class="ln">  Run shell commands         Bash       <span class="q">◐ asks you first</span></span><span class="ln">  Edit files in the project  Edit       <span class="q">◐ asks you first</span></span><span class="ln">  Fetch web pages            WebFetch   <span class="d">· tool not available</span></span><span class="ln"><span class="a">⚠</span> Push to a git remote       Bash       <span class="q">◐ asks you first</span></span><span class="ln hl" id="s4-row"><span class="a">⚠</span> Read .env secrets          Read       <span class="w h">● runs without asking</span></span><span class="ln"><span class="a">⚠</span> Read SSH keys              Read       <span class="q">◐ asks you first</span></span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. Fix -->
+      <section id="s5" class="clip" data-start="46" data-duration="10" data-track-index="0">
+        <div class="scene" id="s5-in">
+          <div class="headline" id="s5-h">The fix is one rule. <em>Cognita confirms it.</em></div>
+          <div class="term" id="s5-t">
+            <div class="bar" data-layout-ignore><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>.claude/settings.json</span></div>
+            <div class="body"><span class="ln">"permissions": { "deny": [<span class="a">"Read(./.env)"</span>] }</span></div>
+          </div>
+          <div class="term" id="s5-t2">
+            <div class="bar" data-layout-ignore><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>claude · my-app</span></div>
+            <div class="body"><span class="cmd"><b>❯ </b><span class="typed" id="s5-cmd">/cognita access</span></span><span class="ln hl" id="s5-row" data-hold><span class="a">⚠</span> Read .env secrets          Read       <span class="ok h">○ blocked</span>   <span class="d">rule Read(./.env)</span></span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. Trim -->
+      <section id="s6" class="clip" data-start="56" data-duration="11" data-track-index="0">
+        <div class="scene" id="s6-in">
+          <div class="headline" id="s6-h">Too much context? <em>Get a plan with commands.</em></div>
+          <div class="term" id="s6-t">
+            <div class="bar" data-layout-ignore><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>claude · my-app</span></div>
+            <div class="body"><span class="cmd"><b>❯ </b><span class="typed" id="s6-cmd">/cognita trim</span></span><span class="ln"> </span><span class="ln h">## Trim plan</span><span class="ln">Loaded before any message: <span class="h">33,710 tokens</span>.</span><span class="ln"> </span><span class="ln">1. Disable plugin <span class="a">cloudflare</span> (16 skills, none used): frees ~1,080</span><span class="ln ok hl" id="s6-plan" data-hold>   claude plugin disable cloudflare --scope local</span><span class="ln">2. Disable MCP server <span class="a">claude_ai_Claude_Docs</span> (3 loaded tools, no calls)</span><span class="ln">   frees ~585 <span class="d">(total ~1,665)</span></span></div>
+          </div>
+          <div class="note" id="s6-n">Also: <b>/cognita report</b> · <b>/cognita history</b> · <b>/cognita access json</b> for CI</div>
+        </div>
+      </section>
+
+      <!-- 7. Install -->
+      <section id="s7" class="clip" data-start="67" data-duration="10" data-track-index="0">
+        <div class="scene" id="s7-in">
+          <img id="s7-logo" class="logo" src="assets/icon.png" alt="Cognita" />
+          <div class="headline" id="s7-h">Know what your agent sees and can do.</div>
+          <div class="term" id="s7-t">
+            <div class="bar" data-layout-ignore><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>install</span></div>
+            <div class="body"><span class="ln"><span class="a">$</span> claude plugin marketplace add Joaco2603/cognita</span><span class="ln"><span class="a">$</span> claude plugin install cognita@cognita</span><span class="ln d"># then, in a new session: /cognita</span></div>
+          </div>
+          <div class="foot" id="s7-f" data-hold>github.com/Joaco2603/cognita · MIT · built with Claude Code · Dojo AI Hackathon</div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const up = (sel, at, d = 0.6) => tl.fromTo(sel, { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: d, ease: "power3.out" }, at);
+      const out = (sel, at) => tl.to(sel, { opacity: 0, duration: 0.4, ease: "power1.in" }, at);
+      const type = (sel, at, chars) => tl.fromTo(sel, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: chars * 0.06, ease: "steps(" + chars + ")" }, at);
+      const lines = (scope, at, gap) => tl.fromTo(scope + " .ln", { opacity: 0 }, { opacity: 1, duration: 0.15, stagger: gap }, at);
+      const flash = (sel, at, color) => tl.fromTo(sel, { backgroundColor: "rgba(0,0,0,0)" }, { backgroundColor: color, duration: 0.5, ease: "power2.out" }, at);
+
+      // 1. Title 0-6
+      tl.fromTo("#s1-logo", { scale: 0.92 }, { scale: 1, duration: 1.2, ease: "power2.out" }, 0);
+      up("#s1-sub", 1.2);
+      out("#s1-in", 5.6);
+
+      // 2. Problem 6-14
+      up("#s2-k", 6.2); up("#s2-h", 6.5);
+      tl.fromTo("#s2-chips .chip", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.45, stagger: 0.35, ease: "power2.out" }, 7.6);
+      up("#s2-n", 10.4);
+      out("#s2-in", 13.6);
+
+      // 3. Overview 14-30
+      up("#s3-h", 14.2); up("#s3-t", 14.6);
+      type("#s3-cmd", 15.4, 8);
+      lines("#s3-t", 16.3, 0.09);
+      const amber = "rgba(229,180,84,0.20)", coral = "rgba(217,119,87,0.20)", none = "rgba(0,0,0,0)";
+      flash("#s3-c1", 18.6, coral); tl.to("#s3-c1", { backgroundColor: none, duration: 0.4 }, 21.4);
+      flash("#s3-c2", 21.6, amber); tl.to("#s3-c2", { backgroundColor: none, duration: 0.4 }, 24.4);
+      flash("#s3-c3", 24.6, coral);
+      up("#s3-n", 25.6);
+      out("#s3-in", 29.6);
+
+      // 4. Access 30-46
+      up("#s4-h", 30.2); up("#s4-t", 30.6);
+      type("#s4-cmd", 31.4, 15);
+      lines("#s4-t", 32.8, 0.28);
+      flash("#s4-row", 37.6, "rgba(229,180,84,0.22)");
+      tl.to("#s4-row", { backgroundColor: "rgba(229,180,84,0.05)", duration: 0.6, yoyo: true, repeat: 5, ease: "sine.inOut" }, 38.4);
+      out("#s4-in", 45.6);
+
+      // 5. Fix 46-56
+      up("#s5-h", 46.2); up("#s5-t", 46.8);
+      up("#s5-t2", 49.0);
+      type("#s5-cmd", 49.6, 15);
+      lines("#s5-t2", 50.8, 0.2);
+      flash("#s5-row", 51.2, "rgba(122,199,138,0.20)");
+      out("#s5-in", 55.6);
+
+      // 6. Trim 56-67
+      up("#s6-h", 56.2); up("#s6-t", 56.6);
+      type("#s6-cmd", 57.4, 13);
+      lines("#s6-t", 58.5, 0.3);
+      flash("#s6-plan", 61.0, "rgba(122,199,138,0.16)");
+      up("#s6-n", 62.2);
+      out("#s6-in", 66.6);
+
+      // 7. Install 67-77
+      tl.fromTo("#s7-logo", { opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1, duration: 0.7, ease: "back.out(1.6)" }, 67.2);
+      up("#s7-h", 67.6); up("#s7-t", 68.2);
+      lines("#s7-t", 68.6, 0.4);
+      up("#s7-f", 70.0);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

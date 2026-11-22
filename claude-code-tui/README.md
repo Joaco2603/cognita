@@ -11,9 +11,12 @@ It runs in your current terminal session: no separate app, no second Claude proc
 
 From Claude Code (2.1.275 or later):
 
+```bash
+claude plugin marketplace add Joaco2603/cognita
+claude plugin install cognita@cognita
 ```
-/plugin install cognita --marketplace Joaco2603/cognita
-```
+
+Or, inside a session: `/plugin marketplace add Joaco2603/cognita`, then `/plugin install cognita@cognita`.
 
 From a clone instead:
 
