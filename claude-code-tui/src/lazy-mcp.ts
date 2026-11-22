@@ -207,7 +207,14 @@ export function createLazyMcp() {
           const key = serverKey(event.server)
           known.set(key, event.server)
           if (next?.origin?.plugin === 'engine' && !connectedNow.has(key)) {
-            startList ??= readList(io).then((list) => list.filter((item) => !isOwnServer(item))).catch(() => [])
+            if (!startList) {
+              const loading = readList(io).then((list) => list.filter((item) => !isOwnServer(item)))
+              startList = loading
+              // A failed read is not remembered: the next raise reads again (this one fails open below).
+              loading.catch(() => {
+                if (startList === loading) startList = undefined
+              })
+            }
             if ((await startList).includes(key)) {
               heldNow.add(key)
               return { value: { isConnected: false, reason: 'disabled', message: HOLD_MESSAGE } }

@@ -176,3 +176,13 @@ test('usage stored in the old shape (one sessionId) still reads and dedupes that
   assert.equal(countLoaded(old, 'S', ['gh']).servers.gh.loadedIn, 2)
   assert.equal(countLoaded(old, 'T', ['gh']).servers.gh.loadedIn, 3)
 })
+
+test('a failed first read of the held list is not cached for the session', async () => {
+  let failing = true
+  const $ = { cwd: async () => '/proj', get: async () => { if (failing) throw new Error('boom'); return ['context7'] } }
+  const lazy = createLazyMcp()
+  assert.equal(await lazy.onConnect($, { server: 'context7' }, engine(passed)), passed)
+  failing = false
+  const held = await lazy.onConnect($, { server: 'context7' }, engine(passed))
+  assert.equal(held.value.isConnected, false)
+})
