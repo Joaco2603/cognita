@@ -8,7 +8,8 @@ Every Claude Code session starts with things you didn't choose on purpose: CLAUD
 
 - **What your agent has loaded.** What fills the context window before you type, what it never uses, and the exact commands to trim it.
 - **What your agent can do.** Which tools it can call, which risky actions (git push, `rm -rf`, reading `.env` or SSH keys, writing outside the project) run **without asking you**, and the rules, hooks and plugins behind that.
-- **What it is doing.** The subagents running in the session and their token use.
+- **What it is doing.** The subagents running in the session, their token use and what the sessions cost in dollars.
+- **What it runs and what it allows.** Every hook and MCP server that runs code on your machine, whether each one is pinned to a version, and a team policy in `.cognita.json` that the whole repo shares.
 
 ```bash
 claude plugin marketplace add Joaco2603/cognita
@@ -18,6 +19,17 @@ claude plugin install cognita@cognita
 Or, inside a session: `/plugin marketplace add Joaco2603/cognita`, then `/plugin install cognita@cognita`.
 
 Then run `/cognita` in a new session.
+
+| Command | What it does |
+| --- | --- |
+| `/cognita` | Open the pane (Overview, Context, Access, Agents) |
+| `/cognita access` | What the agent can reach and do, and which risky actions run without asking |
+| `/cognita report` · `/cognita trim` | What loads before your first message, and the steps to shrink it |
+| `/cognita supply` | Every hook and MCP server that runs code here, and which ones are not pinned to a version |
+| `/cognita cost` · `/cognita history` | What sessions cost in dollars in this project, and the loadout over the last 20 sessions |
+| `/cognita hold <server>` · `connect` · `release` | Keep an MCP server off at startup for this project, bring it back mid-session, or undo it |
+
+Add `json` to most commands for scripts and CI. The full list is in [`claude-code-tui/README.md`](./claude-code-tui/README.md).
 
 ## Who it's for
 
@@ -72,13 +84,18 @@ npm run build
 npm run install:local   # copies the plugin to ~/.claude/skills/cognita
 ```
 
-Start a new Claude Code session and run `/cognita`. Requires Claude Code 2.1.275 or later, and Node.js with npm to build.
+Start a new Claude Code session and run `/cognita`. If a session is already running, run `/reload-plugins` first. Requires Claude Code 2.1.275 or later, and Node.js with npm to build.
+
+### Team policy
+
+Commit a `.cognita.json` at the project root so everyone checks the same rules. It sets the context budget, the growth alert, the minimum verdict per action (for example, reading `.env` must ask) and custom commands such as `terraform apply`. Access reports every violation. Details and an example are in [`claude-code-tui/README.md`](./claude-code-tui/README.md#cognitajson-the-team-policy).
 
 ## Repository
 
 | Path | Contents |
 | --- | --- |
 | [`claude-code-tui/`](./claude-code-tui) | The Cognita plugin: TypeScript sources, compiled hooks, tests |
+| [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) | CI on Linux, macOS and Windows against the latest Claude Code, also weekly |
 | [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) | The marketplace entry for one-step install |
 | [`HACKATHON.md`](./HACKATHON.md) | Dojo AI Hackathon context: criteria, baseline, progress log, checklist |
 | [`demo/`](./demo) | The demo video and its HyperFrames source |
@@ -89,7 +106,8 @@ Start a new Claude Code session and run `/cognita`. Requires Claude Code 2.1.275
 
 ```bash
 cd claude-code-tui
-npm test           # build + 37 node unit tests + 28 pane tests (claude plugin test)
+npm test           # build + 111 node unit tests + 36 pane tests (claude plugin test)
+npm run test:unit  # build + 111 node unit tests only (no Claude Code needed)
 npm run validate   # claude plugin validate .
 ```
 
