@@ -49,6 +49,7 @@ Start a new Claude Code session and run `/cognita`. If a session is already runn
 | `/cognita connect [server]` | Bring a held server back for this session; with no name, every server held now |
 | `/cognita release <server\|all>` | Stop holding it, so it loads at every start again |
 | `/cognita doctor` | Which Claude Code engine APIs Cognita needs, which this version lacks, and the Claude Code version |
+| `/cognita tutorial` | A guided path through these commands, in the order to try them |
 | `/cognita help` | List the subcommands |
 
 `/inspector` is an alias of `/cognita`, kept for earlier versions.

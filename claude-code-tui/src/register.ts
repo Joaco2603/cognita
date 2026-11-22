@@ -20,6 +20,7 @@ import {
 import { renderOverview, renderSidebar, renderTabStrip } from './dashboard-view.js'
 import { createLazyMcp, type HeldView, type LazyIo, type LazyMcp } from './lazy-mcp.js'
 import { applyTrim, wantsApply } from './trim.js'
+import { formatTutorial } from './tutorial.js'
 import {
   DEFAULT_GROWTH_ALERT,
   diffLoadout,
@@ -77,6 +78,7 @@ const HELP = [
   '- `/cognita connect [server]`: bring a held server back for this session (no name connects every held one)',
   '- `/cognita release <server|all>`: stop holding it, so it loads at every start again',
   '- `/cognita doctor`: which Claude Code engine APIs Cognita needs, and which this version lacks',
+  '- `/cognita tutorial`: a guided path through these commands, in the order to try them',
   '- `/cognita help`: this list',
   '',
   '`/inspector` is an alias of `/cognita`.',
@@ -327,6 +329,10 @@ async function runCommand($: ModApi, state: State, event: ModEvent): Promise<{ t
   const rawTail = (event.args ?? '').trim().split(/\s+/).slice(1).join(' ')
 
   if (subcommand === 'help') return { text: HELP }
+
+  if (subcommand === 'tutorial') {
+    return { text: formatTutorial() }
+  }
 
   if (subcommand === 'doctor') {
     try {

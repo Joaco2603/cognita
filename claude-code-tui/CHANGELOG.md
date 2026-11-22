@@ -5,6 +5,9 @@ All notable changes to Cognita are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `/cognita tutorial`: a guided path through the commands, grouped by the question a user has (what loads, what it can do, how to load less, how it changes and costs), with the reference commands at the end.
+
 ## [0.9.0] - 2026-11-22
 
 ### Added
