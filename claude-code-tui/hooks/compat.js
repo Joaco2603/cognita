@@ -4,7 +4,7 @@ export const REQUIREMENTS = [
     { api: '$.tool.list', feature: 'Access', probed: true },
     { api: '$.tool.check', feature: 'Access', probed: true },
     { api: '$.settings.read', feature: 'Access rules and hooks', probed: true },
-    { api: '$.session.usage', feature: 'Context', probed: true },
+    { api: '$.session.usage', feature: 'Context', probed: false },
     { api: '$.session.id', feature: 'History', probed: true },
     { api: '$.store.get', feature: 'History', probed: true },
     { api: '$.store.set', feature: 'History', probed: false },
@@ -45,7 +45,6 @@ export async function probeEngine($) {
     found['$.tool.list'] = await attempt(() => $.tool.list());
     found['$.tool.check'] = await attempt(() => $.tool.check({ tool: 'Read', input: { file_path: '.' } }));
     found['$.settings.read'] = await attempt(() => $.settings.read({ source: 'user' }));
-    found['$.session.usage'] = await attempt(() => $.session.usage());
     found['$.session.id'] = await attempt(() => $.session.id());
     found['$.session.model'] = await attempt(() => $.session.model());
     found['$.session.version'] = await attempt(() => $.session.version());

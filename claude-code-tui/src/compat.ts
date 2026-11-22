@@ -5,7 +5,7 @@ export type Requirement = {
   api: string
   /** The Cognita feature that stops working without it. */
   feature: string
-  /** False when the API has side effects, so it is assumed present instead of called. */
+  /** False when calling it has side effects or a cost (usage is measured by the startup check), so it is assumed present. */
   probed: boolean
 }
 
@@ -14,7 +14,7 @@ export const REQUIREMENTS: readonly Requirement[] = [
   { api: '$.tool.list', feature: 'Access', probed: true },
   { api: '$.tool.check', feature: 'Access', probed: true },
   { api: '$.settings.read', feature: 'Access rules and hooks', probed: true },
-  { api: '$.session.usage', feature: 'Context', probed: true },
+  { api: '$.session.usage', feature: 'Context', probed: false },
   { api: '$.session.id', feature: 'History', probed: true },
   { api: '$.store.get', feature: 'History', probed: true },
   { api: '$.store.set', feature: 'History', probed: false },
@@ -63,7 +63,6 @@ export async function probeEngine($: any): Promise<Record<string, boolean>> {
   found['$.tool.list'] = await attempt(() => $.tool.list())
   found['$.tool.check'] = await attempt(() => $.tool.check({ tool: 'Read', input: { file_path: '.' } }))
   found['$.settings.read'] = await attempt(() => $.settings.read({ source: 'user' }))
-  found['$.session.usage'] = await attempt(() => $.session.usage())
   found['$.session.id'] = await attempt(() => $.session.id())
   found['$.session.model'] = await attempt(() => $.session.model())
   found['$.session.version'] = await attempt(() => $.session.version())
