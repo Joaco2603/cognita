@@ -1,5 +1,7 @@
 # Cognita
 
+[![CI](https://github.com/Joaco2603/cognita/actions/workflows/ci.yml/badge.svg)](https://github.com/Joaco2603/cognita/actions/workflows/ci.yml) · [Changelog](./CHANGELOG.md)
+
 **See everything your Claude Code agent has access to.** Cognita is a Claude Code plugin that answers two questions inside the session you are already in:
 
 1. **What has my agent loaded?** What fills the context window before you type: CLAUDE.md files, MCP servers, skills, system prompt sections. What it never uses, and the exact commands to trim it.
@@ -43,6 +45,7 @@ Start a new Claude Code session and run `/cognita`. If a session is already runn
 | `/cognita hold <server>` | Keep an MCP server off from the next session in this project; with no name, list what is held and suggest idle servers |
 | `/cognita connect [server]` | Bring a held server back for this session; with no name, every server held now |
 | `/cognita release <server\|all>` | Stop holding it, so it loads at every start again |
+| `/cognita doctor` | Which Claude Code engine APIs Cognita needs, which this version lacks, and the Claude Code version |
 | `/cognita help` | List the subcommands |
 
 `/inspector` is an alias of `/cognita`, kept for earlier versions.

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    # Weekly, so a new Claude Code release that breaks an engine API is caught
+    # even when nobody has pushed.
+    - cron: '0 6 * * 1'
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: claude-code-tui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: claude-code-tui/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Compiled hooks match the sources
+        run: git diff --exit-code -- hooks
+      - run: npm run test:unit
+      - name: Install the latest Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - run: claude --version
+      - run: npm run validate
+      # `claude plugin test` runs each test file in a child of the binary and
+      # needs no login (see `claude plugin test --help`).
+      - run: claude plugin test

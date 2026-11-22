@@ -1,5 +1,6 @@
 import { analyzeAccess, formatAccess, formatAccessJson, PROBES, SETTINGS_SOURCES, type AccessReport, type ProbeResult, type SettingsSourceName } from './access.js'
 import { renderAccess } from './access-view.js'
+import { checkCompatibility, compatLine, probeEngine, compatToast, formatDoctor, type CompatReport } from './compat.js'
 import { renderAgents } from './agents-view.js'
 import { renderContext } from './context-view.js'
 import { renderOverview, renderSidebar, renderTabStrip } from './dashboard-view.js'
@@ -56,6 +57,7 @@ const HELP = [
   '- `/cognita hold [server]`: keep an MCP server off from the next session in this project (no name lists the held ones)',
   '- `/cognita connect [server]`: bring a held server back for this session (no name connects every held one)',
   '- `/cognita release <server|all>`: stop holding it, so it loads at every start again',
+  '- `/cognita doctor`: which Claude Code engine APIs Cognita needs, and which this version lacks',
   '- `/cognita help`: this list',
   '',
   '`/inspector` is an alias of `/cognita`.',
@@ -98,6 +100,8 @@ type State = {
   accessCheckedAt: string
   checkingAccess: boolean
   accessError: string
+  /** Engine APIs Cognita needs, checked once at load. */
+  compat?: CompatReport
 }
 
 function createState(): State {
@@ -285,6 +289,15 @@ async function runCommand($: ModApi, state: State, event: ModEvent): Promise<{ t
 
   if (subcommand === 'help') return { text: HELP }
 
+  if (subcommand === 'doctor') {
+    try {
+      const version = await $.session.version().then((value) => value.version).catch(() => undefined)
+      return { text: formatDoctor(state.compat ?? checkCompatibility(await probeEngine($)), version) }
+    } catch {
+      return { text: 'Could not run the compatibility check.' }
+    }
+  }
+
   if (subcommand === 'access' && !options.has('open')) {
     try {
       const report = applyAccess(state, await readAccess($, state.currentDirectory))
@@ -304,7 +317,8 @@ async function runCommand($: ModApi, state: State, event: ModEvent): Promise<{ t
       const heldLine = held.length > 0
         ? `\n\nHeld for this project: ${held.join(', ')} (not loaded this session) · \`/cognita connect <name>\``
         : ''
-      return { text: formatReport(measured, promptCapture(state), state.usageLog, state.since, state.alerts.budget) + heldLine }
+      const compatText = state.compat ? `\n\n${compatLine(state.compat)}` : ''
+      return { text: formatReport(measured, promptCapture(state), state.usageLog, state.since, state.alerts.budget) + heldLine + compatText }
     } catch {
       return { text: 'Could not measure the context window for this session.' }
     }
@@ -477,6 +491,17 @@ function renderPane($: ModApi, state: State, event: ModEvent): unknown {
   })
 }
 
+/** Checks the engine APIs once at load and says so when a feature is off. Never throws. */
+async function checkEngineApis($: ModApi, state: State): Promise<void> {
+  try {
+    state.compat = checkCompatibility(await probeEngine($))
+    const notice = compatToast(state.compat)
+    if (notice) await $.ui.toast(notice)
+  } catch {
+    // The check is a courtesy; the features degrade on their own.
+  }
+}
+
 /** Below this many columns the sidebar gives way to a row of view buttons. */
 const COMPACT_BELOW = 80
 
@@ -504,6 +529,7 @@ export function register(on: ModOn): void {
     }
     state.currentDirectory = event.cwd ?? ''
     state.lazy.setCwd(state.currentDirectory)
+    await checkEngineApis($, state)
     state.isStatusLineEnabled = (await $.env.get('CLAUDE_INSPECTOR_STATUSLINE'))?.trim() !== '0'
     state.alerts = await readAlertSettings($)
     const isStartupCheckEnabled = (await $.env.get('CLAUDE_INSPECTOR_STARTUP_CHECK'))?.trim() !== '0'
