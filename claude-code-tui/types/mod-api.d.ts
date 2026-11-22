@@ -78,6 +78,13 @@ interface SessionUsage {
   cost?: { usd: number; hasUnknownPrice?: true }
 }
 
+/** One user or assistant message, as `$.session.messages()` returns it. */
+interface SessionMessageSummary {
+  role: 'user' | 'assistant'
+  text: string
+  toolUses: Array<{ tool: string; input: Record<string, unknown>; text?: string }>
+}
+
 interface PromptComposeSection {
   id: string
   text: string
@@ -130,6 +137,16 @@ interface ModApi {
     info: () => Promise<{ platform?: string; [field: string]: unknown }>
     /** The project folder the session started in. */
     cwd: () => Promise<string>
+    /** The transcript so far: user and assistant messages, newest last. */
+    messages: () => Promise<SessionMessageSummary[] | { deny: string }>
+    /** Compacts the conversation, as `/compact` does; rejects while a turn runs. */
+    compact: (input: { instructions?: string }) => Promise<{ skip?: string }>
+  }
+  prompt: {
+    /** Submits a prompt as a user turn, once the session is idle. */
+    submit: (input: { text: string }) => Promise<unknown>
+    /** Proposes text as the prompt box's dim suggestion (Tab takes it). */
+    suggest: (input: { text: string }) => Promise<{ isShown?: boolean }>
   }
   mcp: {
     /** Connects a server a hook held back; accepts the /mcp name or the tool-name spelling. */
@@ -159,6 +176,10 @@ interface ModApi {
     invalidate: (event: 'ui.render') => void
     toast: (message: string) => Promise<void>
     status: (text: string | undefined) => void
+  }
+  clock: {
+    /** Calls `fn` once after `ms` milliseconds, on a dispatch of its own. */
+    after: (ms: number, fn: () => void) => { cancel: () => void }
   }
   env: {
     get: (name: string) => Promise<string | undefined>

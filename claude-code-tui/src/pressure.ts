@@ -111,6 +111,11 @@ export const COMPACT_FROM_WINDOW = 30
 export const COMPACT_FROM_PROMPTS = 15
 
 const PLAN_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
+
+/** Whether a tool call can change the plan. */
+export function isPlanTool(tool: unknown): boolean {
+  return typeof tool === 'string' && PLAN_TOOLS.has(tool)
+}
 const LEVEL_RANK: Record<PressureLevel, number> = { ok: 0, watch: 1, act: 2 }
 
 export function wordCount(text: string): number {
@@ -285,6 +290,17 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`
 }
 
+/** The prompt that hands the pending plan items to subagents. */
+export function splitPrompt(plan: readonly PlanItem[]): string {
+  const pending = plan.filter((item) => item.status === 'pending').slice(0, SPLIT_ITEMS)
+  return `Delegate these plan items to subagents, one subagent each, if they do not depend on each other: ${pending.map((item, index) => `${index + 1}) ${shorten(item.text, 80)}`).join('; ')}. Keep only each subagent's short report in this conversation, and do the items that depend on others here, in order.`
+}
+
+/** The prompt that saves what a compaction would blur to Engram. */
+export function engramPrompt(tool: string, openItems: number): string {
+  return `Before this conversation is compacted, use ${tool} to save to Engram: the goal, the decisions made so far and why, the open plan (${plural(openItems, 'item')}), and the key findings with their file paths. One observation per topic.`
+}
+
 /**
  * The steps worth taking, in order, or none while pressure is ok.
  * - split: the plan has SPLIT_FROM_ITEMS or more open items.
@@ -303,7 +319,7 @@ export function recommend(pressure: Pressure, input: PressureInput): Recommendat
         title: 'Split the plan across subagents',
         why: `${plural(pressure.openItems, 'open plan item')} compete for the model's attention; each subagent gets one with a clean context and reports back a summary.`,
         command: '/cognita split',
-        text: `Delegate these plan items to subagents, one subagent each, if they do not depend on each other: ${pending.slice(0, SPLIT_ITEMS).map((item, index) => `${index + 1}) ${shorten(item.text, 80)}`).join('; ')}. Keep only each subagent's short report in this conversation, and do the items that depend on others here, in order.`,
+        text: splitPrompt(input.plan),
       }
     : undefined
 
@@ -323,7 +339,7 @@ export function recommend(pressure: Pressure, input: PressureInput): Recommendat
         title: 'Save decisions to Engram first',
         why: 'Compacting and delegating lose detail; Engram keeps it across compactions and sessions.',
         command: '/cognita save',
-        text: `Before this conversation is compacted, use ${input.engramTool} to save to Engram: the goal, the decisions made so far and why, the open plan (${plural(pressure.openItems, 'item')}), and the key findings with their file paths. One observation per topic.`,
+        text: engramPrompt(input.engramTool, pressure.openItems),
       }
     : undefined
 
