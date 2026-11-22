@@ -111,7 +111,8 @@ export function planFromMessages(messages) {
     }
     return { plan, hasPlanCalls };
 }
-const TAGGED_BLOCK = /<([a-z][\w-]*)(?:\s[^>]*)?>[\s\S]*?<\/\1>/gi;
+// Only the tags the engine wraps around its own markup. Any other tag is the person's text and stays.
+const ENGINE_BLOCK = /<(system-reminder|command-name|command-message|command-args|local-command-stdout|local-command-stderr|local-command-caveat)(?:\s[^>]*)?>[\s\S]*?<\/\1>/gi;
 const COMPACTION_SUMMARY = /^This session is being continued from a previous conversation/;
 /**
  * What the person typed, oldest first: user messages with their own text, less
@@ -121,7 +122,7 @@ const COMPACTION_SUMMARY = /^This session is being continued from a previous con
 export function promptsOf(messages) {
     return messages
         .filter((message) => message.role === 'user' && message.text)
-        .map((message) => message.text.replace(TAGGED_BLOCK, '').trim())
+        .map((message) => message.text.replace(ENGINE_BLOCK, '').trim())
         .filter((text) => text && !COMPACTION_SUMMARY.test(text));
 }
 function shorten(text, max) {

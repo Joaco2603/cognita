@@ -86,6 +86,13 @@ test('promptsOf keeps what the person typed and drops reminders, commands and co
   assert.deepEqual(prompts, ['Build the pressure view', 'and add tests'])
 })
 
+test('promptsOf keeps tags the person typed and drops only the engine markup', () => {
+  const prompts = promptsOf([
+    { role: 'user', text: 'Usa <Button>texto</Button> en el form <system-reminder>be brief</system-reminder>', toolUses: [] },
+  ])
+  assert.deepEqual(prompts, ['Usa <Button>texto</Button> en el form'])
+})
+
 test('goalOf picks the latest prompt with a few words, shortened', () => {
   assert.equal(goalOf(['Build a context pressure viewer for the plugin', 'yes do it']), 'Build a context pressure viewer for the plugin')
   assert.equal(goalOf([]), '')
