@@ -9,6 +9,7 @@ Every Claude Code session starts with things you didn't choose on purpose: CLAUD
 - **What your agent has loaded.** What fills the context window before you type, what it never uses, and the exact commands to trim it.
 - **What your agent can do.** Which tools it can call, which risky actions (git push, `rm -rf`, reading `.env` or SSH keys, writing outside the project) run **without asking you**, and the rules, hooks and plugins behind that.
 - **What it is doing.** The subagents running in the session and their token use.
+- **How hard the context is working.** One pressure percentage (window plus an estimate of what splits attention: open plan items, long instructions, many turns) and the one step that relieves it: `/cognita compact` with focus built from your goal and plan, `/cognita save` to Engram, or `/cognita split` to subagents. It warns you on its own when pressure rises.
 
 ```bash
 claude plugin marketplace add Joaco2603/cognita

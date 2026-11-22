@@ -140,6 +140,14 @@ Registrarlo en la sección siguiente para la entrega.
   - Hecho con 4 subagentes en paralelo (sonnet, un worktree cada uno) y merge en la sesión principal. Probado en sesión real: "Policy: Run shell commands must be blocked; it asks first.", tools MCP por servidor, `/cognita doctor` con 20 APIs OK.
   - Tests: 87 unitarios y 35 de UI, todos en verde; `claude plugin validate` en verde.
 
+- **2026-11-22 · Presión de contexto (v0.10.0).**
+  - Nueva vista de presión: un porcentaje que combina el uso de la ventana (medido) con una estimación de carga de atención (ítems abiertos del plan, palabras del plan, palabras de los últimos 3 prompts y turnos desde la última compactación). Niveles ok / watch / act (50% y 70%, configurables con `CLAUDE_INSPECTOR_PRESSURE_WATCH` y `_ACT`). La fórmula está en el README y la parte de atención se marca como estimación.
+  - `/cognita pressure` (y `json`) explica el nivel y recomienda pasos según las señales: compactar con un `/compact` armado a partir del objetivo y el plan, guardar decisiones en Engram si hay un servidor Engram conectado, o repartir el plan en subagentes cuando tiene 5 ítems abiertos o más. Cada paso es un comando: `/cognita compact`, `/cognita save`, `/cognita split`.
+  - Ayuda automática: después de cada turno se vuelve a medir; si el nivel sube, un toast dice la causa y el paso a dar, y ese comando queda sugerido en el prompt (Tab). Tarjeta PRESSURE en el Overview (`c` compacta) y la presión en la status line.
+  - El plan se sigue desde `TodoWrite`, `TaskCreate`/`TaskUpdate` y la herramienta de plan de la app de escritorio, y sobrevive a una compactación.
+  - Hallazgos reales: el motor no deja compactar ni enviar un prompt desde el hook de un comando, así que los comandos responden enseguida y actúan en un despacho propio (`$.clock.after`). Antes de la primera respuesta no hay conteo de tokens y la presión daba 0%; ahora usa el desglose de lo cargado. Probado con `claude -p "/cognita pressure" --plugin-dir ./claude-code-tui` en una sesión real reanudada: 81,392 de 1,000,000 tokens, 45 palabras de prompt.
+  - Tests: 40 de UI y 60 unitarios, todos en verde; `claude plugin validate` en verde.
+
 ## Cómo usamos AI coding
 
 - **Herramienta:** Claude Code (CLI) en todo el ciclo: diseño, implementación en TypeScript, tests, documentación y pruebas funcionales.
