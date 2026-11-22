@@ -24,13 +24,15 @@ Branch: `feat/serious-use` (from `feat/lazy-mcp`, v0.8.0). Delivery: ask-on-risk
 
 | ID | Specs | Route | Status | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | S1, S2 | delegated (sonnet, worktree; parallel unit) | pending | |
-| T2 | S3 | delegated (sonnet, worktree; parallel unit) | pending | |
-| T3 | S4 | delegated (sonnet, worktree; parallel unit) | pending | |
-| T4 | S5 | delegated (sonnet, worktree; parallel unit) | pending | |
-| T5 | all | inline: merge, full suite, docs, version 0.9.0, HACKATHON log | pending | |
+| T1 | S1, S2 | delegated (sonnet, worktree; parallel unit) | done | f4d9e24 (merge 69e79b2) |
+| T2 | S3 | delegated (sonnet, worktree; parallel unit) | done | 0d031a8 |
+| T3 | S4 | delegated (sonnet, worktree; parallel unit) | done | 737deaf, 239da1a, 3e1fef2 (merge f89e1e3) |
+| T4 | S5 | delegated (sonnet, worktree; parallel unit) | done | 6cc09eb (merge 25bcbab) |
+| T5 | all | inline: merge, full suite, docs, version 0.9.0, HACKATHON log | done | 17df0be |
 
 ## Log
 
 - L1 (2026-11-22, user): "solo quiero modificar esto y lo de mostrar dolares genera subagents para completarlo" (pasted items 2, 3, 4 and 5 of the gap list).
 - L2: Writer trigger (a): four independent units launched together, each several files; all touch `src/register.ts`, so each runs in an isolated worktree and the parent merges. Engram mirror pending (tools unavailable in this session).
+- L3: Worktrees started from `main` (v0.7.1), not `feat/serious-use`; writers were told to rebase onto `feat/lazy-mcp`; parent resolved `register.ts` conflicts (kept both sides) and rebuilt hooks.
+- L4: Merged suite: 87 unit + 35 UI pass, validate passes. Live: policy violation and invalid-file warning shown; MCP probe rows per server; `/cognita doctor` 20 APIs OK; `/cognita cost` and `/cognita supply` print. Open: vercel shows 128 checked of 274 tools with "Not checked" = 0 (count mismatch); plugin/connector MCP configs are not readable by the API, so supply can't classify them; CI not run on GitHub yet (not pushed).
