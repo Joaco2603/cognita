@@ -96,6 +96,13 @@ Registrarlo en la sección siguiente para la entrega.
   - Verificado que `claude plugin disable cloudflare --scope local` resuelve `cloudflare@cloudflare` y solo escribe `.claude/settings.local.json` del proyecto; el comando para deshacer también funciona.
   - Sesión real: 33,828 tokens con presupuesto de 30k; el plan libera ~1,665 y avisa que sigue ~2,163 por encima.
   - Tests: 26 de UI y 29 unitarios, todos en verde.
+- **2026-11-21 · Lazy MCP: los servidores que no se usan no cargan (v0.7.0).**
+  - `/inspector hold <server>`: el servidor deja de cargar al iniciar las sesiones de este proyecto. `/inspector connect` (o `c` en el panel) lo trae de vuelta en medio de la sesión, y `/inspector release` lo deja cargar siempre.
+  - Usa el hook `mcp.connect` del engine: no toca archivos de settings y `/mcp` lo muestra como retenido por el plugin. Por defecto no retiene nada.
+  - Sugerencias: un servidor que cargó en 3 sesiones del proyecto sin una sola llamada aparece como candidato. El plan de recorte ahora propone `/inspector hold` en vez de `/mcp`.
+  - Probado en sesiones reales: retener `context7` y `vercel` bajó la base de 55,849 a 55,000 tokens; retener todos los servidores, de 55,505 a 52,861. Con tool search activo, el ahorro son sobre todo las instrucciones de cada servidor.
+  - Hecho con ruteo de modelos: opus planificó, haiku mapeó el código y sonnet implementó. Grafo de graphify actualizado y skill `repo-graph-routing` agregada al proyecto.
+  - Tests: 32 de UI y 40 unitarios, todos en verde.
 
 ## Checklist de entrega
 

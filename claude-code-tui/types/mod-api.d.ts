@@ -112,6 +112,14 @@ interface ModApi {
   session: {
     usage: (args?: { breakdown?: 'summary' | 'full'; columns?: number }) => Promise<SessionUsage>
     id: () => Promise<string>
+    /** The project folder the session started in. */
+    cwd: () => Promise<string>
+  }
+  mcp: {
+    /** Connects a server a hook held back; accepts the /mcp name or the tool-name spelling. */
+    connect: (server: string) => Promise<
+      { isConnected: true; server: string } | { isConnected: false; reason: string; message: string }
+    >
   }
   /** Per-plugin JSON key-value store that outlives the session. */
   store: {
@@ -160,7 +168,7 @@ interface AgentInfo {
   hasRow: boolean
 }
 
-type ModNext = (event: any) => any
+type ModNext = ((event: any) => any) & { origin?: { plugin: string } }
 
 type ModHandler = (
   api: ModApi,

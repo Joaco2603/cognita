@@ -7,7 +7,8 @@ A Claude Code plugin that shows **what your session has loaded into the context 
 - **Since last session.** Each measurement is saved per project, so the next session shows what changed: `MCP server linear: added, 3,000 tokens`, a plugin's skills growing, a CLAUDE.md that doubled, a model switch. Catch context creep before it costs you.
 - **Loaded but unused.** The plugin watches tool calls and skill use in the session and lists the MCP servers and skills that cost tokens but were never used. These are the first candidates to disable for the project.
 - **System prompt sections.** See every section of the last composed system prompt, including the ones *other plugins* inject (`<plugin>:<name>` ids), with approximate token sizes.
-- **Trim plan.** `/inspector trim` turns the levers into numbered steps with the exact command for each one (`claude plugin disable cloudflare --scope local`, the `/mcp` toggle for a server), a running total, and how many steps it takes to get within your budget. Plugin changes apply to this project only and come with the undo command.
+- **Trim plan.** `/inspector trim` turns the levers into numbered steps with the exact command for each one (`claude plugin disable cloudflare --scope local`, `/inspector hold <server>` for an MCP server), a running total, and how many steps it takes to get within your budget. Plugin changes apply to this project only and come with the undo command.
+- **Lazy MCP.** `/inspector hold context7` keeps an MCP server off from the next session in this project, and `/inspector connect context7` brings it back any time, mid-session, with no restart. The MCP view in the pane has the same buttons, and after a few sessions of a server being loaded and never called the plugin suggests holding it. Holding is per project, never disconnects a server in the current session, and falls back to connecting everything if anything goes wrong.
 - **History.** `/inspector history` shows how the loadout moved over the last 20 sessions in the project: a sparkline, the overall change, how many sessions went over budget, and one row per session.
 - **Startup check.** When a session starts, the loadout is measured in the background. A toast warns you if it grew by 2,000 tokens or more since the last session, or went over your budget, and names the biggest cause: `Context loadout grew +3.4k since last session, mostly MCP server linear (new)`.
 - **Context budget.** Set `CLAUDE_INSPECTOR_BUDGET=30k` and the report says whether what loads before the first message fits.
@@ -44,6 +45,9 @@ Start Claude Code with `claude` and run `/inspector`. If a session is already ru
 | `/inspector report full` | The same report with exact token counts |
 | `/inspector trim` | A step-by-step plan, with commands, to shrink what loads before the first message |
 | `/inspector history` | The loadout over the last 20 sessions in this project, with a sparkline |
+| `/inspector hold <server>` | Keep an MCP server off from the next session in this project; with no name, list what is held and suggest idle servers |
+| `/inspector connect [server]` | Bring a held server back for this session; with no name, every server held now |
+| `/inspector release <server\|all>` | Stop holding it, so it loads at every start again |
 | `/inspector report json` | The same data as JSON, for scripts and CI (combine with `full`) |
 | `/inspector help` | List the subcommands |
 
@@ -54,6 +58,7 @@ Hotkeys in the pane:
 | `1` / `2` / `3` | Dashboard, Context, Agents |
 | `o` `m` `p` `s` `y` | Context subviews: Overview, Files, MCP, Skills, Prompt |
 | `r` | Measure again (estimated) |
+| `c` | MCP view: connect the servers held in this session |
 | `x` | Exact count (asks Claude Code for a full breakdown) |
 | `f` | Search workspaces |
 | `n` | New conversation in the current workspace (`/clear`) |
@@ -94,7 +99,8 @@ Layout:
 
 | Path | Role |
 | --- | --- |
-| `src/register.ts` | The hooks module: the `/inspector` command, the pane, and the observe-only hooks (`tool.call`, `skill.prompt`, `prompt.compose`, `prompt.context`, `session.measure`) |
+| `src/register.ts` | The hooks module: the `/inspector` command, the pane, and the observe-only hooks (`tool.call`, `skill.prompt`, `prompt.compose`, `prompt.context`, `session.measure`) and the `mcp.connect` hold hook |
+| `src/lazy-mcp.ts` | Lazy MCP: the `mcp.connect` hold hook, the hold list in the store, and the `hold`, `connect` and `release` commands |
 | `src/loadout.ts` | Pure analysis: groups the breakdown, joins it with usage, finds idle items, formats the report |
 | `src/context-view.ts` | The Context tab |
 | `src/dashboard-view.ts`, `src/agents-view.ts` | The Dashboard and Agents tabs |
@@ -105,6 +111,10 @@ Every observing hook only reads the event and passes it on (`next(event)`). Hook
 
 ## Limits and troubleshooting
 
+- **How much holding saves.** It removes a server's tools from the context at startup. Measured here with tool search on, holding all 9 servers took the loadout from 55,505 to 52,861 tokens (about 2.6k), because deferred tools already cost little. Without tool search the saving is larger.
+- **Undo everything.** `/inspector release all` un-holds every server in the project, and the next session loads them again.
+- **`/mcp` shows a held server as held by this plugin**, and a reconnect from `/mcp` is held too: use `/inspector connect <server>` instead.
+- **Held per project folder.** A subfolder of a project is a different project with its own hold list.
 - **Session scope.** Usage counts start when the plugin loads and cover only this session. Agents started in other sessions do not appear.
 - **What the API hides.** The plugin API does not expose full subagent prompts.
 - **Windows.** Paths with `\` and `/` both work. If workspaces don't show up, set `CLAUDE_CODE_WORKSPACES_DIR` to an absolute path.

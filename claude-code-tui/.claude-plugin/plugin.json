@@ -1,7 +1,7 @@
 {
   "name": "workspace-dashboard",
   "displayName": "Workspace Dashboard",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Measure what a Claude Code session has loaded into context (MCP servers, skills, CLAUDE.md, prompt sections) and flag what it never uses. Plus workspaces and agents.",
   "author": {
     "name": "Joaquin Pappa"

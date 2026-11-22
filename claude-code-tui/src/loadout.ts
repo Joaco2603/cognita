@@ -243,7 +243,7 @@ export function findLevers(
         key: `mcp-${server.server}`,
         kind: 'mcp' as const,
         target: server.server,
-        text: `Disable MCP server ${code(server.server)} for this project (${plural(server.loadedTools, 'loaded tool')}, no calls)`,
+        text: `Hold MCP server ${code(server.server)} for this project (${plural(server.loadedTools, 'loaded tool')}, no calls)`,
         tokens: server.tokens,
       })),
     ...skillGroups
@@ -716,7 +716,12 @@ function leverSteps(lever: Lever): string[] {
     ]
   }
   if (lever.kind === 'mcp') {
-    return [`   Run \`/mcp\`, pick \`${lever.target}\` and choose **Disable**. It stays configured, and you can enable it again there.`]
+    return [
+      '   ```',
+      `   /inspector hold ${lever.target}`,
+      '   ```',
+      `   From the next session in this project; \`/inspector connect ${lever.target}\` brings it back any time.`,
+    ]
   }
   return [`   Open \`${lever.target}\` and move the sections you rarely need into a skill, which loads only when used.`]
 }

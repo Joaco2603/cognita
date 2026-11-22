@@ -115,6 +115,7 @@ test('levers rank idle MCP servers, unused plugins and large instruction files',
     ['mcp-db', 2000],
     ['skills-plugin ops', 800],
   ])
+  assert.equal(levers[1].text, 'Hold MCP server `db` for this project (1 loaded tool, no calls)')
   assert.equal(levers[2].text, "Disable plugin `ops` (4 skills, none used)")
 })
 
@@ -363,7 +364,11 @@ test('the trim plan gives each lever a command, a running total and the budget o
   assert.ok(plan.includes('**All '))
   for (const lever of loadout.levers) {
     if (lever.kind === 'plugin') assert.ok(plan.includes(`claude plugin disable ${lever.target} --scope local`))
-    if (lever.kind === 'mcp') assert.ok(plan.includes(`pick \`${lever.target}\` and choose **Disable**`))
+    if (lever.kind === 'mcp') {
+      assert.ok(plan.includes(`/inspector hold ${lever.target}`))
+      assert.ok(plan.includes(`/inspector connect ${lever.target}\` brings it back any time`))
+      assert.ok(!plan.includes('**Disable**'))
+    }
   }
   assert.ok(formatTrimPlan(loadout, 50000).includes('Already within budget'))
 })

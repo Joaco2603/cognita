@@ -1,6 +1,7 @@
 import { renderAgents } from './agents-view.js'
 import { renderContext } from './context-view.js'
 import { renderDashboard, renderSidebar } from './dashboard-view.js'
+import { createLazyMcp, type LazyIo, type LazyMcp } from './lazy-mcp.js'
 import {
   DEFAULT_GROWTH_ALERT,
   diffLoadout,
@@ -9,6 +10,7 @@ import {
   formatJson,
   formatTrimPlan,
   formatReport,
+  mcpServerOf,
   measurePrompt,
   recordSkillUse,
   recordToolCall,
@@ -48,6 +50,9 @@ const HELP = [
   '- `/inspector report json`: the same data as JSON, for scripts and CI (add `full` for exact counts)',
   '- `/inspector history`: how the loadout changed across the last sessions in this project',
   '- `/inspector trim`: a step-by-step plan, with commands, to shrink what loads before the first message',
+  '- `/inspector hold [server]`: keep an MCP server off from the next session in this project (no name lists the held ones)',
+  '- `/inspector connect [server]`: bring a held server back for this session (no name connects every held one)',
+  '- `/inspector release <server|all>`: stop holding it, so it loads at every start again',
   '- `/inspector help`: this list',
 ].join('\n')
 
@@ -74,6 +79,7 @@ export function register(on: ModOn): void {
 
   // Context loadout: measured on demand, plus what the hooks below observe.
   const usageLog = emptyUsage()
+  const lazy = createLazyMcp()
   let loadout: Loadout | undefined
   let loadoutDetail: 'summary' | 'full' = 'summary'
   let measuredAt = ''
@@ -104,6 +110,7 @@ export function register(on: ModOn): void {
       description: 'Workspace dashboard and context loadout (try: /inspector report)',
     })
     currentDirectory = event.cwd ?? ''
+    lazy.setCwd(currentDirectory)
     isStatusLineEnabled = (await $.env.get('CLAUDE_INSPECTOR_STATUSLINE'))?.trim() !== '0'
     alerts = await readAlertSettings($)
     const isStartupCheckEnabled = (await $.env.get('CLAUDE_INSPECTOR_STARTUP_CHECK'))?.trim() !== '0'
@@ -113,7 +120,7 @@ export function register(on: ModOn): void {
     // One quick measurement in the background: it saves this session's loadout
     // for the next comparison and warns when the loadout grew or is over budget.
     if (isStartupCheckEnabled && event.isInteractive !== false && !loadout) {
-      void readLoadout($, 'summary', usageLog, currentDirectory).then(async (measured) => {
+      void readLoadout($, 'summary', usageLog, currentDirectory, lazy).then(async (measured) => {
         if (loadout) return
         applyLoadout(measured, 'summary')
         const alert = startupAlert(measured.loadout, measured.since, alerts)
@@ -124,7 +131,11 @@ export function register(on: ModOn): void {
     return result
   })
 
+  // Holds back the engine's start-up raise of every MCP server this project holds.
+  on('mcp.connect', ($, event, next) => lazy.onConnect(lazyIo($), event, next))
+
   on('command.run', { command: COMMAND_NAME }, async ($, event) => {
+    const rawTail = (event.args ?? '').trim().split(/\s+/).slice(1).join(' ')
     const [subcommand = '', option = '', ...rest] = (event.args ?? '').trim().toLowerCase().split(/\s+/)
 
     if (subcommand === 'help') return { text: HELP }
@@ -133,9 +144,13 @@ export function register(on: ModOn): void {
       try {
         const options = new Set([option, ...rest])
         const detail = options.has('full') ? 'full' : 'summary'
-        const measured = applyLoadout(await readLoadout($, detail, usageLog, currentDirectory), detail)
+        const measured = applyLoadout(await readLoadout($, detail, usageLog, currentDirectory, lazy), detail)
         if (options.has('json')) return { text: '```json\n' + formatJson(measured, since, alerts) + '\n```' }
-        return { text: formatReport(measured, promptCapture(), usageLog, since, alerts.budget) }
+        const held = lazy.pendingNames()
+        const heldLine = held.length > 0
+          ? `\n\nHeld for this project: ${held.join(', ')} (not loaded this session) · \`/inspector connect <name>\``
+          : ''
+        return { text: formatReport(measured, promptCapture(), usageLog, since, alerts.budget) + heldLine }
       } catch {
         return { text: 'Could not measure the context window for this session.' }
       }
@@ -143,17 +158,25 @@ export function register(on: ModOn): void {
 
     if (subcommand === 'trim') {
       try {
-        const measured = applyLoadout(await readLoadout($, 'summary', usageLog, currentDirectory), 'summary')
+        const measured = applyLoadout(await readLoadout($, 'summary', usageLog, currentDirectory, lazy), 'summary')
         return { text: formatTrimPlan(measured, alerts.budget) }
       } catch {
         return { text: 'Could not measure the context window for this session.' }
       }
     }
 
+    if (subcommand === 'hold' || subcommand === 'connect' || subcommand === 'release') {
+      try {
+        return { text: await lazy[subcommand](lazyIo($), rawTail, loadout?.mcpServers) }
+      } catch {
+        return { text: `Could not run /inspector ${subcommand}.` }
+      }
+    }
+
     if (subcommand === 'history') {
       try {
         // Measuring first adds this session to the trend.
-        applyLoadout(await readLoadout($, 'summary', usageLog, currentDirectory), 'summary')
+        applyLoadout(await readLoadout($, 'summary', usageLog, currentDirectory, lazy), 'summary')
         const trend = trendOf(await $.store.get(`history:${currentDirectory}`))
         return { text: formatHistory(trend, await $.session.id(), alerts.budget) }
       } catch {
@@ -163,7 +186,7 @@ export function register(on: ModOn): void {
 
     if (subcommand === 'context') {
       activeTab = 'context'
-      if (!loadout) void readLoadout($, 'summary', usageLog, currentDirectory).then((measured) => {
+      if (!loadout) void readLoadout($, 'summary', usageLog, currentDirectory, lazy).then((measured) => {
         applyLoadout(measured, 'summary')
         $.ui.invalidate('ui.render')
       }, () => undefined)
@@ -181,7 +204,11 @@ export function register(on: ModOn): void {
   // the event on unchanged, so a failure here never changes what Claude does.
   on('tool.call', ($, event, next) => {
     try {
-      if (typeof event.tool === 'string') recordToolCall(usageLog, event.tool)
+      if (typeof event.tool === 'string') {
+        recordToolCall(usageLog, event.tool)
+        const server = mcpServerOf(event.tool)
+        if (server) lazy.noteUsed(lazyIo($), server)
+      }
     } catch {
       // Recording is best effort.
     }
@@ -217,9 +244,10 @@ export function register(on: ModOn): void {
         const context = event.context as SessionUsage['context'] | undefined
         const cost = event.cost as SessionUsage['cost']
         const percent = context?.percent
+        const held = lazy.pendingNames().length
         $.ui.status(percent === undefined
           ? undefined
-          : [`ctx ${Math.round(percent)}%`, cost ? `$${cost.usd.toFixed(2)}` : '', sinceBadge(since)].filter(Boolean).join(' · '))
+          : [`ctx ${Math.round(percent)}%`, cost ? `$${cost.usd.toFixed(2)}` : '', sinceBadge(since), held > 0 ? `${held} MCP held` : ''].filter(Boolean).join(' · '))
       } catch {
         // The status line is cosmetic.
       }
@@ -232,6 +260,15 @@ export function register(on: ModOn): void {
 
     const ui = $.ui.resolve(event)
     const redraw = () => $.ui.invalidate('ui.render')
+    const lazyView = await lazy.view(lazyIo($)).catch(() => ({ held: [], unusedSessions: {} }))
+    const lazyAction = (run: () => Promise<string>) => async () => {
+      try {
+        await $.ui.toast(await run())
+      } catch {
+        await $.ui.toast('Could not change the held MCP servers.')
+      }
+      redraw()
+    }
 
     const refreshLoadout = async (detail: 'summary' | 'full') => {
       if (measuring) return
@@ -239,7 +276,7 @@ export function register(on: ModOn): void {
       contextError = ''
       redraw()
       try {
-        applyLoadout(await readLoadout($, detail, usageLog, currentDirectory), detail)
+        applyLoadout(await readLoadout($, detail, usageLog, currentDirectory, lazy), detail)
       } catch {
         contextError = 'Could not measure the context window for this session.'
       } finally {
@@ -253,7 +290,7 @@ export function register(on: ModOn): void {
       const [agentResult, contextResult] = await Promise.allSettled([
         $.agent.list(),
         $.command.run({ command: 'context' }),
-        readLoadout($, 'summary', usageLog, currentDirectory).then((measured) => applyLoadout(measured, 'summary')),
+        readLoadout($, 'summary', usageLog, currentDirectory, lazy).then((measured) => applyLoadout(measured, 'summary')),
       ])
       if (agentResult.status === 'fulfilled') sessionAgents = agentResult.value
       else dashboardError = 'Could not load subagent token statistics.'
@@ -361,6 +398,10 @@ export function register(on: ModOn): void {
         detail: loadoutDetail,
         loading: measuring,
         error: contextError,
+        held: lazyView.held,
+        unusedSessions: lazyView.unusedSessions,
+        onHold: (server) => void lazyAction(() => lazy.hold(lazyIo($), server, loadout?.mcpServers))(),
+        onConnect: (server) => void lazyAction(() => lazy.connect(lazyIo($), server ?? '', loadout?.mcpServers))(),
         onRefresh: (detail) => void refreshLoadout(detail),
         onSubviewChange: (subview) => {
           contextSubview = subview
@@ -438,15 +479,25 @@ export function register(on: ModOn): void {
   })
 }
 
+/** The slice of `$` that lazy MCP uses, with `$` spelled at each call site. */
+function lazyIo($: ModApi): LazyIo {
+  return {
+    cwd: () => $.session.cwd(),
+    get: (key) => $.store.get(key),
+    set: (key, value) => $.store.set(key, value),
+    connect: (server) => $.mcp.connect(server),
+  }
+}
+
 type Measured = { loadout: Loadout; since?: LoadoutDiff | 'first' }
 
 /** Measures the context window and joins it with what the session has used. */
-async function readLoadout($: ModApi, detail: 'summary' | 'full', usageLog: UsageLog, cwd: string): Promise<Measured> {
+async function readLoadout($: ModApi, detail: 'summary' | 'full', usageLog: UsageLog, cwd: string, lazy: LazyMcp): Promise<Measured> {
   const usage = await $.session.usage({ breakdown: detail, columns: 80 })
   const breakdown = usage.context.breakdown
   if (!breakdown) throw new Error('Claude Code returned no context breakdown.')
   const loadout = summarize(breakdown, usageLog)
-  return { loadout, since: await compareWithLastSession($, cwd, loadout) }
+  return { loadout, since: await compareWithLastSession($, cwd, loadout, lazy) }
 }
 
 /** Budget and growth warnings from CLAUDE_INSPECTOR_BUDGET and CLAUDE_INSPECTOR_ALERT. */
@@ -460,11 +511,13 @@ async function readAlertSettings($: ModApi): Promise<AlertSettings> {
  * Saves this measurement for the project and compares it with the last one
  * another session saved. Best effort: a store failure only loses the comparison.
  */
-async function compareWithLastSession($: ModApi, cwd: string, loadout: Loadout): Promise<LoadoutDiff | 'first' | undefined> {
+async function compareWithLastSession($: ModApi, cwd: string, loadout: Loadout, lazy: LazyMcp): Promise<LoadoutDiff | 'first' | undefined> {
   if (!cwd) return undefined
   try {
     const key = `history:${cwd}`
-    const snapshot = toSnapshot(loadout, await $.session.id())
+    const sessionId = await $.session.id()
+    void lazy.noteLoaded(lazyIo($), sessionId, loadout.mcpServers.map((server) => server.server))
+    const snapshot = toSnapshot(loadout, sessionId)
     const { history, baseline } = rememberSnapshot(await $.store.get(key), snapshot)
     await $.store.set(key, history)
     return baseline ? diffLoadout(baseline, snapshot) : 'first'
