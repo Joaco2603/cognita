@@ -1,5 +1,6 @@
 import { riskyAllowed } from './access.js';
 import { baseTokensOf, meter } from './loadout.js';
+import { renderPressureCard } from './pressure-view.js';
 import { ACCENT, BORDER, ERROR, OK, WARN, keyHints } from './theme.js';
 import { formatTokensShort, isActiveAgent } from './utils.js';
 const TABS = [
@@ -185,10 +186,22 @@ export function renderOverview(ui, options) {
                 ],
             }),
             card('overview-context', 'CONTEXT', 'context', '2', contextLines, loadout && loadout.idleTokens > 0 ? WARN : BORDER),
+            options.onCompact
+                ? renderPressureCard(ui, {
+                    pressure: options.pressure,
+                    recommendations: options.recommendations ?? [],
+                    tagged: options.tagged,
+                    retention: options.retention,
+                    loading: options.loading,
+                    compacting: options.compacting ?? false,
+                    onCompact: options.onCompact,
+                })
+                : null,
             card('overview-access', 'ACCESS', 'access', '3', accessLines, risky.length > 0 || access?.defaultMode === 'bypassPermissions' ? WARN : BORDER),
             card('overview-agents-card', 'AGENTS', 'agents', '4', agentLines),
             options.error ? Text({ key: 'overview-error', children: [options.error], color: ERROR }) : null,
-            keyHints(ui, '1-4 switch views · r refresh · Esc close · /cognita help for commands'),
+            // `c` lives on the PRESSURE card's button, which shows once pressure is measured.
+            keyHints(ui, `1-4 switch views · r refresh · ${options.onCompact && options.pressure ? 'c compact · ' : ''}Esc close · /cognita help for commands`),
         ],
     });
 }

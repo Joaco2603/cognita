@@ -5,6 +5,14 @@ All notable changes to Cognita are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-22
+
+### Added
+- Context pressure: a percentage that combines the measured window use with an estimate of attention load (open plan items, plan words, recent prompt words, turns since the last compaction), with ok / watch / act levels set by `CLAUDE_INSPECTOR_PRESSURE_WATCH` and `CLAUDE_INSPECTOR_PRESSURE_ACT`.
+- `/cognita pressure` (and `json`) explains the level and suggests steps; `/cognita compact`, `/cognita save` and `/cognita split` run them.
+- A toast and a prompt suggestion when pressure rises after a turn, a PRESSURE card in the Overview (`c` compacts) and pressure in the status line.
+- The plan is tracked from `TodoWrite`, `TaskCreate`/`TaskUpdate` and the desktop app's plan tool, and survives a compaction.
+
 ## [0.9.0] - 2026-11-22
 
 ### Added

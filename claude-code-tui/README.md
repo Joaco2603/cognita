@@ -6,6 +6,7 @@
 
 1. **What has my agent loaded?** What fills the context window before you type: CLAUDE.md files, MCP servers, skills, system prompt sections. What it never uses, and the exact commands to trim it.
 2. **What can my agent do?** Which tools it can call, which risky actions (git push, `rm -rf`, reading `.env` or SSH keys, writing outside the project) run **without asking you**, and the permission rules, hooks and plugins behind that.
+3. **Is my context under pressure?** A full window, a long plan or long instructions split the model's attention. Cognita turns that into one percentage and the step that relieves it: compact with the right focus, save decisions to Engram, or hand plan items to subagents.
 
 It runs in your current terminal session: no separate app, no second Claude process, nothing sent anywhere.
 
@@ -43,6 +44,10 @@ Start a new Claude Code session and run `/cognita`. If a session is already runn
 | `/cognita trim` | A step-by-step plan, with commands, to shrink what loads before the first message |
 | `/cognita history` | The loadout over the last 20 sessions in this project, with a sparkline |
 | `/cognita cost` | What sessions cost in dollars in this project: total, per day, per session (`json` for scripts) |
+| `/cognita pressure` | Context pressure (window plus an attention estimate) and the steps that relieve it; add `json` for scripts |
+| `/cognita compact` | Compact now, keeping the goal and the open plan |
+| `/cognita save` | Send the prompt that saves the goal, decisions and plan to Engram (needs an Engram MCP server) |
+| `/cognita split` | Send the prompt that hands the pending plan items to subagents |
 | `/cognita context`, `/cognita access open`, `/cognita agents` | Open the pane on that view |
 | `/cognita hold <server>` | Keep an MCP server off from the next session in this project; with no name, list what is held and suggest idle servers |
 | `/cognita connect [server]` | Bring a held server back for this session; with no name, every server held now |
@@ -164,6 +169,67 @@ The fix for that finding is one line in `.claude/settings.json`: `"permissions":
 
 The subagents of this session, running and finished, with their token use. Open one for its details, or start a new background agent in the project.
 
+### Pressure: how hard the context is working
+
+The Overview's PRESSURE card and `/cognita pressure` combine two things:
+
+```
+window    = context tokens / context window                     measured by Claude Code
+attention = plan + plan words + prompt words + turns, max 100    estimate
+  plan         = 4 points per open plan item, max 40
+  plan words   = words in the open items / 20, max 20
+  prompt words = words in your last 3 prompts / 40, max 20
+  turns        = 1 point per prompt after the 5th since the last compaction, max 20
+pressure  = window + ½ × attention × (1 − window)
+levels    = ok below 50% · watch from 50% · act from 70%
+```
+
+A full window is 100% on its own; attention alone tops out at 50%, so a long plan on an empty window says *watch*, not *act*. The window is measured. **Attention is an estimate**: it counts what tends to split focus, it does not measure the model. The plan comes from `TodoWrite`, `TaskCreate`/`TaskUpdate` and the desktop app's plan tool; Cognita tracks it across compactions.
+
+Which steps it suggests, once pressure is not ok:
+
+| Step | When | One command |
+| --- | --- | --- |
+| Split the plan across subagents | 5 or more open plan items | `/cognita split` |
+| Compact, keeping the goal and the plan | window at 30% or more, 15 or more prompts, or no split to suggest | `/cognita compact` |
+| Save decisions to Engram first | one of the above, and an Engram MCP server is connected | `/cognita save` |
+
+Splitting comes first when attention adds more than the window; saving always comes before compacting. Sample output:
+
+```
+## Context pressure: 78% · act
+
+`████████████████░░░░` window 75% (150,000 of 200,000 tokens) + attention 25 / 100 (estimate)
+
+1. Save decisions to Engram first. Run `/cognita save`, which sends:
+   > Before this conversation is compacted, use mcp__engram__mem_save to save to Engram: the goal, ...
+2. Compact, keeping the goal and the plan. Run `/cognita compact`, which does the same as:
+   /compact Keep: the goal "Build a context pressure viewer"; in progress: Write the model; open plan: Wire the view, Add tests; decisions made and why, and the files being changed. Drop: finished exploration, long tool output, errors already fixed.
+3. Split the plan across subagents. Run `/cognita split`, which sends:
+   > Delegate these plan items to subagents, one subagent each, if they do not depend on each other: 1) ...
+```
+
+**Tag what must survive.** Wrap parts of a prompt in one of four tags, with an optional `id`:
+
+| Tag | For | Weight |
+| --- | --- | --- |
+| `<important>` | What must not get lost | 1 |
+| `<constraint>` | Rules that stay in force ("do not touch main") | 1 |
+| `<decision>` | Something settled, and why | 0.75 |
+| `<open>` | What is still pending | 0.5 |
+
+```
+Refactor the cache. <constraint>Do not touch main</constraint> <decision id="db">Use SQLite: it ships with the runtime</decision>
+```
+
+Items without an `id` get one by kind (`c1`, `d1`, `i1`, `o1`). Cognita then:
+
+- **Estimates the attention each one gets**: its share of the window, and its share of the attention on tagged items, `weight × tokens` over the sum. A short constraint next to a long open item gets little, and the report flags an `important` or `constraint` item that gets under half an even share as *crowded out*. This is an estimate: it assumes attention follows size, scaled by importance.
+- **Asks every compaction to keep them by id**, yours (`/compact …`), the automatic one and `/cognita compact` alike: the summarizer gets one line per item, `[c1] constraint: Do not touch main`.
+- **Checks retention afterwards.** An item whose id is in the new summary is *kept* when most of its words are on that line and *rewritten* otherwise; with no id it is kept only when nearly all its words are there, else *lost*. A toast names what was lost or rewritten, and `/cognita pressure` and the Overview show the last result. Shared words show how much the text changed, not whether its meaning did.
+
+**Automatic help.** After each turn Cognita measures the pressure again. When the level rises (ok to watch, watch to act) a toast names the cause and the one step to take, and that command appears as the prompt box's suggestion (Tab takes it). It warns once per rise, not every turn.
+
 ## Supply chain
 
 `/cognita supply` (also `/inspector supply`, and `json` for scripts) answers: what code runs on my machine because of my Claude Code setup, and can it change without me noticing?
@@ -183,7 +249,7 @@ Best effort: the plugin API exposes settings and the tool list, not the hooks or
 
 ## Commands for scripts
 
-- `/cognita report json` and `/cognita access json` print the same data as JSON.
+- `/cognita report json`, `/cognita access json` and `/cognita pressure json` print the same data as JSON.
 - `/cognita trim` prints the exact command for each step, such as `claude plugin disable cloudflare --scope local` (this project only, with the undo command).
 - Set `CLAUDE_INSPECTOR_BUDGET=30k` and the report says whether what loads before the first message fits.
 
@@ -198,7 +264,7 @@ Claude Code reports what the session has cost in USD. Cognita keeps the highest 
 
 ## Status line and startup check
 
-- **Status line.** `ctx 42% · $0.31 · +3.4k vs last` after every measurement (the last part only when the loadout changed).
+- **Status line.** `ctx 42% · $0.31 · +3.4k vs last · pressure 62% watch` after every measurement (the change only when the loadout changed, the pressure only when it is not ok).
 - **Startup check.** When an interactive session starts, the loadout is measured in the background. A toast warns you if it grew by 2,000 tokens or more since the last session or went over your budget, and names the biggest cause.
 
 ## Configuration
@@ -212,6 +278,9 @@ Variables are the per-machine fallback; a `.cognita.json` in the project wins.
 | `CLAUDE_INSPECTOR_SPEND_BUDGET` | none | Monthly spend in USD, such as `50`; `/cognita cost` shows the share used and a startup toast warns when over |
 | `CLAUDE_INSPECTOR_STARTUP_CHECK` | on | Set it to `0` to skip the background measurement at session start |
 | `CLAUDE_INSPECTOR_STATUSLINE` | on | Set it to `0` to keep the status line untouched |
+| `CLAUDE_INSPECTOR_PRESSURE_WATCH` | `50` | Pressure (%) from which the level is watch |
+| `CLAUDE_INSPECTOR_PRESSURE_ACT` | `70` | Pressure (%) from which the level is act; must be above watch, or both defaults apply |
+| `CLAUDE_INSPECTOR_PRESSURE_ALERT` | on | Set it to `0` to turn off the pressure toast after each turn |
 
 ### `.cognita.json`: the team policy
 
@@ -236,6 +305,7 @@ Commit a `.cognita.json` at the project root so everyone uses the same rules, li
 ## Privacy and safety
 
 - Cognita reads; it never changes your settings. `/cognita trim` prints commands for you to run.
+- It changes the conversation only when you ask: `/cognita compact` (or `c` on the Overview) compacts, `/cognita save` and `/cognita split` send one prompt. Each prints what it does first.
 - The Access check asks the permission system what it *would* answer. No tool runs.
 - Every observing hook only reads the event and passes it on (`next(event)`), inside `try/catch`, so a bug in Cognita can never block a tool call or a prompt.
 - Nothing leaves your machine. Measurements are kept in the plugin's own store, per project, for the "since last session" comparison and the history.
@@ -273,4 +343,7 @@ npm run validate   # claude plugin validate .
 - **"Unused" is a hint.** It means no calls in this session so far. Measure after real work, not right at startup.
 - **The pane doesn't open.** Run `claude plugin validate <plugin folder>`, then `/reload-plugins`. Start `claude --debug` to see any hook errors. `/cognita report` and `/cognita access` work without the pane.
 - **Two plugins answer `/inspector`.** An earlier version is installed as `workspace-dashboard`. `npm run install:local` removes it, or delete `~/.claude/skills/workspace-dashboard`.
+- **`/cognita compact` did not start.** Claude Code compacts only between turns. The command prints the `/compact …` line: run that instead.
+- **A tagged item shows as lost but the summary has it.** The check looks for its id, then for nearly all its words. If the summary paraphrased it without the id, it counts as lost: say so in the next prompt, or tag it again.
+- **Pressure shows no plan in `claude -p`.** Headless sessions have no todo or task tool, so only the window and your prompts count there.
 - **Git Bash on Windows.** `claude -p "/cognita access"` can turn `/cognita` into a Windows path. Run it from PowerShell or set `MSYS_NO_PATHCONV=1`.

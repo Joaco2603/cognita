@@ -45,6 +45,42 @@ import {
   type UsageLog,
 } from './loadout.js'
 import {
+  DEFAULT_PRESSURE,
+  applyPlanCall,
+  compactFocus,
+  engramPrompt,
+  engramSaveTool,
+  formatPressure,
+  formatPressureJson,
+  isPlanTool,
+  parsePressureSettings,
+  planFromMessages,
+  pressureAlert,
+  pressureBadge,
+  pressureOf,
+  promptsOf,
+  recommend,
+  splitPrompt,
+  type PlanItem,
+  type Pressure,
+  type PressureInput,
+  type PressureLevel,
+  type PressureSettings,
+  type Recommendation,
+} from './pressure.js'
+import {
+  extractTagged,
+  focusOf,
+  formatRetention,
+  formatTagged,
+  mergeTagged,
+  retentionAlert,
+  retentionOf,
+  withTaggedInstructions,
+  type Retention,
+  type TaggedItem,
+} from './tags.js'
+import {
   basename,
   type AccessSubview,
   type AgentSubview,
@@ -69,6 +105,9 @@ const HELP = [
   '- `/cognita trim`: a step-by-step plan, with commands, to shrink what loads before the first message',
   '- `/cognita history`: how the loadout changed across the last sessions in this project',
   '- `/cognita cost`: what sessions cost in dollars in this project, per day and per session (`json` for scripts)',
+  '- `/cognita pressure`: how hard the context is working (window plus an attention estimate) and the step that relieves it (`json` for scripts)',
+  '- `/cognita compact`: compact now, keeping the goal and the open plan',
+  '- `/cognita save` · `/cognita split`: send the prompt that saves decisions to Engram, or that hands the plan to subagents',
   '- `/cognita context` · `/cognita access open`: open the pane on that view',
   '- `/cognita hold [server]`: keep an MCP server off from the next session in this project (no name lists the held ones)',
   '- `/cognita connect [server]`: bring a held server back for this session (no name connects every held one)',
@@ -131,6 +170,21 @@ type State = {
   accessError: string
   /** Engine APIs Cognita needs, checked once at load. */
   compat?: CompatReport
+  // Pressure: the plan the hooks track, and the last reading.
+  plan: PlanItem[]
+  /** Whether the hooks have seen a plan call; until then the transcript seeds the plan. */
+  hasPlan: boolean
+  pressure?: Pressure
+  recommendations: Recommendation[]
+  pressureSettings: PressureSettings
+  /** The level of the last automatic check; a rise above it raises a toast. */
+  pressureLevel: PressureLevel
+  checkingPressure: boolean
+  compacting: boolean
+  /** What the person tagged (important, decision, open, constraint), kept across compactions. */
+  tagged: TaggedItem[]
+  /** Which tagged items the last compaction kept. */
+  retention?: Retention
 }
 
 function createState(): State {
@@ -168,6 +222,14 @@ function createState(): State {
     accessCheckedAt: '',
     checkingAccess: false,
     accessError: '',
+    plan: [],
+    hasPlan: false,
+    recommendations: [],
+    pressureSettings: DEFAULT_PRESSURE,
+    pressureLevel: 'ok',
+    checkingPressure: false,
+    compacting: false,
+    tagged: [],
   }
 }
 
@@ -241,7 +303,7 @@ async function refreshAgents($: ModApi, state: State): Promise<void> {
 /** Everything the Overview shows, fetched together. */
 async function refreshAll($: ModApi, state: State): Promise<void> {
   await Promise.allSettled([
-    refreshLoadout($, state, state.loadoutDetail),
+    refreshLoadout($, state, state.loadoutDetail).then(() => refreshPressureView($, state)),
     refreshAccess($, state),
     refreshAgents($, state),
   ])
@@ -250,7 +312,7 @@ async function refreshAll($: ModApi, state: State): Promise<void> {
 /** On open, fetch only what is missing; r refreshes everything. */
 async function fillMissing($: ModApi, state: State): Promise<void> {
   await Promise.allSettled([
-    state.loadout ? undefined : refreshLoadout($, state, 'summary'),
+    (state.loadout ? Promise.resolve() : refreshLoadout($, state, 'summary')).then(() => refreshPressureView($, state)),
     state.access ? undefined : refreshAccess($, state),
     refreshAgents($, state),
   ])
@@ -291,6 +353,169 @@ async function startupCheck($: ModApi, state: State): Promise<void> {
   }
 }
 
+type WindowReading = Pick<PressureInput, 'windowPercent' | 'windowTokens' | 'windowMax'>
+
+/** How full the window is, from Claude Code's own count. */
+async function readWindow($: ModApi): Promise<WindowReading> {
+  const { context } = (await $.session.usage()) as SessionUsage
+  if (context.percent === undefined && context.tokens === undefined) {
+    // No model reply yet, so no count: measure what is loaded instead.
+    const breakdown = (await $.session.usage({ breakdown: 'summary', columns: 80 })).context.breakdown
+    if (breakdown) return { windowPercent: breakdown.percentage, windowTokens: breakdown.totalTokens, windowMax: breakdown.maxTokens }
+  }
+  const percent = context.percent ?? (context.tokens !== undefined && context.window > 0 ? (context.tokens / context.window) * 100 : 0)
+  return { windowPercent: percent, windowTokens: context.tokens, windowMax: context.window }
+}
+
+/**
+ * What the person asked and the plan, from the transcript, plus whether an
+ * Engram server can save. Best effort: an unreadable part reads as empty.
+ */
+async function readConversation($: ModApi, state: State): Promise<Omit<PressureInput, keyof WindowReading>> {
+  const [read, tools] = await Promise.all([
+    $.session.messages().catch(() => []),
+    $.tool.list().catch(() => []),
+  ])
+  const messages = Array.isArray(read) ? read : []
+  if (!state.hasPlan) {
+    // Loaded mid-session or resumed: rebuild the plan from the transcript's own calls.
+    const seeded = planFromMessages(messages)
+    if (seeded.hasPlanCalls) {
+      state.plan = seeded.plan
+      state.hasPlan = true
+    }
+  }
+  const prompts = promptsOf(messages)
+  state.tagged = mergeTagged(state.tagged, extractTagged(prompts, state.tagged))
+  return { plan: state.plan, prompts, engramTool: engramSaveTool(tools.map((tool) => tool.name)) }
+}
+
+/** Reads the pressure and keeps it for the pane and the status line. */
+async function refreshPressure($: ModApi, state: State, window?: WindowReading): Promise<{ input: PressureInput; pressure: Pressure; recommendations: Recommendation[] }> {
+  const [reading, conversation] = await Promise.all([window ?? readWindow($), readConversation($, state)])
+  const input: PressureInput = { ...reading, ...conversation }
+  const pressure = pressureOf(input, state.pressureSettings)
+  const recommendations = recommend(pressure, input)
+  state.pressure = pressure
+  state.recommendations = recommendations
+  return { input, pressure, recommendations }
+}
+
+/** The pane's reading reuses the loadout's window count, so it asks Claude Code for nothing more. */
+async function refreshPressureView($: ModApi, state: State): Promise<void> {
+  const loadout = state.loadout
+  if (!loadout) return
+  try {
+    await refreshPressure($, state, { windowPercent: loadout.percentage, windowTokens: loadout.totalTokens, windowMax: loadout.maxTokens })
+  } catch {
+    // The card says it is not measured; /cognita pressure reports the failure.
+  } finally {
+    $.ui.invalidate('ui.render')
+  }
+}
+
+/**
+ * After each main-loop turn: measure the pressure and, when its level rises,
+ * say so once with the one step to take, and propose that step as the prompt
+ * box's suggestion.
+ */
+async function checkPressure($: ModApi, state: State): Promise<void> {
+  if (state.checkingPressure) return
+  state.checkingPressure = true
+  try {
+    const { pressure, recommendations } = await refreshPressure($, state)
+    const alert = state.pressureSettings.isAlertEnabled ? pressureAlert(state.pressureLevel, pressure, recommendations) : undefined
+    state.pressureLevel = pressure.level
+    if (alert) {
+      await $.ui.toast(alert)
+      const step = recommendations[0]
+      if (step) await $.prompt.suggest({ text: step.command }).catch(() => undefined)
+    }
+  } catch {
+    // The automatic check is a convenience; /cognita pressure measures again.
+  } finally {
+    state.checkingPressure = false
+    $.ui.invalidate('ui.render')
+  }
+}
+
+/**
+ * Compacting and submitting a prompt both wait for the turn a command hook
+ * holds, so the commands answer at once and act on a dispatch of their own.
+ */
+const AFTER_COMMAND_MS = 100
+
+/** Compacts with the given focus and says how it went in a toast. */
+async function compactNow($: ModApi, state: State, focus: string): Promise<void> {
+  if (state.compacting) return
+  state.compacting = true
+  $.ui.invalidate('ui.render')
+  try {
+    const result = await $.session.compact({ instructions: focus })
+    if (result?.skip) {
+      await $.ui.toast(`Compaction skipped: ${result.skip}`)
+    } else {
+      state.pressureLevel = 'ok'
+      await $.ui.toast('Compacted, keeping the goal and the open plan.')
+      await refreshPressure($, state).catch(() => undefined)
+    }
+  } catch {
+    await $.ui.toast('Could not compact now (a turn may be running). Run the /compact line /cognita compact printed.')
+  } finally {
+    state.compacting = false
+    $.ui.invalidate('ui.render')
+  }
+}
+
+/** Submits a prompt as the person's next turn, or says it could not. */
+async function submitNow($: ModApi, text: string): Promise<void> {
+  try {
+    await $.prompt.submit({ text })
+  } catch {
+    await $.ui.toast('Could not send the prompt. Paste the text /cognita printed as your next message.')
+  }
+}
+
+/** Runs `fn` once the command hook has returned; false when the host has no timer. */
+function afterCommand($: ModApi, fn: () => Promise<void>): boolean {
+  try {
+    $.clock.after(AFTER_COMMAND_MS, () => void fn().catch(() => undefined))
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function compactCommand($: ModApi, state: State): Promise<CommandAnswer> {
+  const focus = withTaggedInstructions(compactFocus(await readConversation($, state)), state.tagged) ?? ''
+  const fallback = `\`\`\`\n/compact ${focus}\n\`\`\``
+  if (!afterCommand($, () => compactNow($, state, focus))) {
+    return { text: `Run this to compact, keeping the goal and the plan:\n\n${fallback}`, isTextDisplayOnly: true }
+  }
+  return { text: `Compacting, keeping:\n\n${blockquote(focus)}\n\nIf it does not start, run:\n\n${fallback}`, isTextDisplayOnly: true }
+}
+
+/** Quotes every line, so a multi-line text stays one Markdown quote. */
+function blockquote(text: string): string {
+  return text.split('\n').map((line) => (line ? `> ${line}` : '>')).join('\n')
+}
+
+function sendCommand($: ModApi, prompt: string): CommandAnswer {
+  if (!afterCommand($, () => submitNow($, prompt))) {
+    return { text: `Paste this as your next message:\n\n${blockquote(prompt)}`, isTextDisplayOnly: true }
+  }
+  return { text: `Sending this to Claude:\n\n${blockquote(prompt)}`, isTextDisplayOnly: true }
+}
+
+async function compactFromPane($: ModApi, state: State): Promise<void> {
+  try {
+    const focus = compactFocus(await readConversation($, state))
+    await compactNow($, state, withTaggedInstructions(focus, state.tagged) ?? focus)
+  } catch {
+    // compactNow reports its own failures; reading the conversation never throws.
+  }
+}
+
 async function launchAgent($: ModApi, state: State, project: Workspace, value: string): Promise<void> {
   const task = value.trim()
   if (!task || state.launchingAgent) return
@@ -318,7 +543,9 @@ async function launchAgent($: ModApi, state: State, project: Workspace, value: s
   }
 }
 
-async function runCommand($: ModApi, state: State, event: ModEvent): Promise<{ text?: string }> {
+type CommandAnswer = { text?: string; isTextDisplayOnly?: true }
+
+async function runCommand($: ModApi, state: State, event: ModEvent): Promise<CommandAnswer> {
   const [subcommand = '', option = '', ...rest] = (event.args ?? '').trim().toLowerCase().split(/\s+/)
   const options = new Set([option, ...rest])
   const rawTail = (event.args ?? '').trim().split(/\s+/).slice(1).join(' ')
@@ -422,6 +649,36 @@ async function runCommand($: ModApi, state: State, event: ModEvent): Promise<{ t
     }
   }
 
+  if (subcommand === 'pressure') {
+    try {
+      const { pressure, recommendations } = await refreshPressure($, state)
+      if (options.has('json')) return { text: '```json\n' + formatPressureJson(pressure, recommendations, state.pressureSettings) + '\n```' }
+      const tagged = [...formatTagged(focusOf(state.tagged, pressure.windowTokens)), ...formatRetention(state.retention)]
+      return { text: formatPressure(pressure, recommendations, state.pressureSettings, tagged) }
+    } catch {
+      return { text: 'Could not measure the context pressure for this session.' }
+    }
+  }
+
+  if (subcommand === 'compact') return compactCommand($, state)
+
+  if (subcommand === 'save') {
+    const conversation = await readConversation($, state)
+    if (!conversation.engramTool) {
+      return { text: 'No Engram MCP server is connected in this session, so there is nowhere to save to. `/cognita compact` still keeps the goal and the plan in the summary.' }
+    }
+    const openItems = conversation.plan.filter((item) => item.status !== 'completed').length
+    return sendCommand($, engramPrompt(conversation.engramTool, openItems))
+  }
+
+  if (subcommand === 'split') {
+    const { plan } = await readConversation($, state)
+    if (plan.filter((item) => item.status === 'pending').length < 2) {
+      return { text: 'The plan has fewer than two pending items, so there is nothing to split across subagents.' }
+    }
+    return sendCommand($, splitPrompt(plan))
+  }
+
   if (subcommand === 'context' || subcommand === 'access' || subcommand === 'agents' || subcommand === 'overview') {
     state.activeTab = subcommand
   } else if (subcommand) {
@@ -469,6 +726,12 @@ function renderPane($: ModApi, state: State, event: ModEvent): unknown {
       loadout: state.loadout,
       access: state.access,
       sessionAgents: state.sessionAgents,
+      pressure: state.pressure,
+      recommendations: state.recommendations,
+      tagged: focusOf(state.tagged, state.pressure?.windowTokens),
+      retention: state.retention,
+      compacting: state.compacting,
+      onCompact: () => void compactFromPane($, state),
       loading: state.measuring || state.checkingAccess,
       error: [state.contextError, state.accessError].filter(Boolean).join(' '),
       onRefresh: () => void refreshAll($, state),
@@ -606,6 +869,11 @@ export function register(on: ModOn): void {
     state.policyWarnings = loaded.warnings
     state.alerts = mergeAlerts(state.policy, await readAlertSettings($))
     state.spendBudget = parseSpendBudget(await $.env.get('CLAUDE_INSPECTOR_SPEND_BUDGET'))
+    state.pressureSettings = parsePressureSettings({
+      watch: await $.env.get('CLAUDE_INSPECTOR_PRESSURE_WATCH'),
+      act: await $.env.get('CLAUDE_INSPECTOR_PRESSURE_ACT'),
+      alert: await $.env.get('CLAUDE_INSPECTOR_PRESSURE_ALERT'),
+    })
     const isStartupCheckEnabled = (await $.env.get('CLAUDE_INSPECTOR_STARTUP_CHECK'))?.trim() !== '0'
     const result = await next?.(event)
     if (isStartupCheckEnabled && event.isInteractive !== false && !state.loadout && !state.measuring) {
@@ -632,7 +900,20 @@ export function register(on: ModOn): void {
     } catch {
       // Recording is best effort.
     }
-    return next?.(event)
+    if (!isPlanTool(event.tool)) return next?.(event)
+    return trackPlan(state, event, next)
+  })
+
+  // Every compaction, the person's or the engine's, is asked to keep the
+  // tagged items by id; afterwards the summary is checked for each one.
+  on('session.compact', (_$, event, next) => keepTagged(_$, state, event, next))
+
+  // After each main-loop turn, check the pressure and warn when it rises.
+  on('turn.complete', async ($, event, next) => {
+    const result = await next?.(event)
+    const isWatching = state.pressureSettings.isAlertEnabled || state.isStatusLineEnabled
+    if (isWatching && event.agentId === undefined && event.isAborted !== true) void checkPressure($, state)
+    return result
   })
 
   on('skill.prompt', ($, event, next) => {
@@ -669,7 +950,7 @@ export function register(on: ModOn): void {
         const held = state.lazy.pendingNames().length
         $.ui.status(percent === undefined
           ? undefined
-          : [`ctx ${Math.round(percent)}%`, cost ? `$${cost.usd.toFixed(2)}${cost.hasUnknownPrice ? '+' : ''}` : '', sinceBadge(state.since), held > 0 ? `${held} MCP held` : ''].filter(Boolean).join(' · '))
+          : [`ctx ${Math.round(percent)}%`, cost ? `$${cost.usd.toFixed(2)}${cost.hasUnknownPrice ? '+' : ''}` : '', sinceBadge(state.since), pressureBadge(state.pressure), held > 0 ? `${held} MCP held` : ''].filter(Boolean).join(' · '))
       } catch {
         // The status line is cosmetic.
       }
@@ -692,6 +973,59 @@ function lazyIo($: ModApi): LazyIo {
     set: (key, value) => $.store.set(key, value),
     connect: (server) => $.mcp.connect(server),
   }
+}
+
+/**
+ * Lets a plan call run, then applies it to the tracked plan, which outlives a
+ * compaction (the transcript's copy of the call does not). Observe only: the
+ * result passes on unchanged.
+ */
+async function trackPlan(state: State, event: ModEvent, next?: ModNext): Promise<unknown> {
+  const result = await next?.(event)
+  try {
+    const outcome = result as { deny?: string; isError?: boolean; text?: unknown } | undefined
+    if (!outcome?.deny && !outcome?.isError) {
+      state.plan = applyPlanCall(state.plan, {
+        tool: String(event.tool),
+        input: event as Record<string, unknown>,
+        resultText: typeof outcome?.text === 'string' ? outcome.text : undefined,
+        agentId: typeof event.agentId === 'string' ? event.agentId : undefined,
+      })
+      state.hasPlan = true
+    }
+  } catch {
+    // Tracking is best effort.
+  }
+  return result
+}
+
+async function keepTagged($: ModApi, state: State, event: ModEvent, next?: ModNext): Promise<unknown> {
+  let items: TaggedItem[] = []
+  let forwarded = event
+  try {
+    if (event.agentId === undefined) {
+      const messages = Array.isArray(event.messages) ? event.messages as SessionMessageSummary[] : []
+      items = state.tagged = mergeTagged(state.tagged, extractTagged(promptsOf(messages), state.tagged))
+      const instructions = withTaggedInstructions(typeof event.instructions === 'string' ? event.instructions : undefined, items)
+      if (instructions !== event.instructions) forwarded = { ...event, instructions }
+    }
+  } catch {
+    items = []
+    forwarded = event
+  }
+  const result = await next?.(forwarded)
+  try {
+    const kept = (result as { messages?: SessionMessageSummary[] } | undefined)?.messages
+    if (items.length > 0 && Array.isArray(kept) && event.trigger !== 'precompute') {
+      state.retention = retentionOf(items, kept.map((message) => message.text ?? '').join('\n'))
+      const alert = retentionAlert(state.retention)
+      if (alert) void $.ui.toast(alert)
+      $.ui.invalidate('ui.render')
+    }
+  } catch {
+    // The retention check is best effort; the compaction already happened.
+  }
+  return result
 }
 
 type Measured = { loadout: Loadout; since?: LoadoutDiff | 'first' }
