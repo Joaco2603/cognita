@@ -1,12 +1,12 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 const pane = {
-  plugin: 'workspace-dashboard',
+  plugin: 'cognita',
   component: 'Pane',
-  requestId: 'workspace-dashboard',
+  requestId: 'cognita',
   viewport: { columns: 120, rows: 40 },
   props: {
-    title: 'Claude Code',
+    title: 'Cognita',
     isFocused: true,
     bodyColumns: 90,
     placement: 'dock',
@@ -84,7 +84,7 @@ function mockSession(on: any, requested: string[] = [], opened?: string[], env: 
 async function openContext($: any, on: any, requested?: string[]) {
   mockSession(on, requested)
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
-  await $.command.run({ command: 'inspector', args: '' })
+  await $.command.run({ command: 'cognita', args: '' })
   const ui = await $.ui.mount({ ...pane, surface: 'terminal' })
   await ui.press({ key: 'tab-context' })
   return ui
@@ -117,7 +117,7 @@ test('the Context tab flags loaded MCP servers and skills the session never used
   on('tool.call', () => ({ result: {} }))
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
   await $.tool.call({ tool: 'mcp__github__create_issue', title: 'x' } as any)
-  await $.command.run({ command: 'inspector', args: '' })
+  await $.command.run({ command: 'cognita', args: '' })
   const ui = await $.ui.mount({ ...pane, surface: 'terminal' })
   await ui.press({ key: 'tab-context' })
 
@@ -160,12 +160,12 @@ test('the Prompt view explains when no system prompt has been captured yet', asy
   expect(await ui.find({ text: 'SYSTEM PROMPT SECTIONS' })).toBeDefined()
 })
 
-test('/inspector report prints a markdown loadout without opening the pane', async ($, on) => {
+test('/cognita report prints a markdown loadout without opening the pane', async ($, on) => {
   const opened: string[] = []
   mockSession(on, [], opened)
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
 
-  const { text } = await $.command.run({ command: 'inspector', args: 'report' }) as { text: string }
+  const { text } = await $.command.run({ command: 'cognita', args: 'report' }) as { text: string }
 
   expect(opened).toEqual([])
   expect(text).toContain('## Session loadout')
@@ -174,12 +174,12 @@ test('/inspector report prints a markdown loadout without opening the pane', asy
   expect(text).toContain('MCP server `linear`')
 })
 
-test('/inspector help lists the subcommands', async ($, on) => {
+test('/cognita help lists the subcommands', async ($, on) => {
   mockSession(on)
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
 
   const { text } = await $.command.run({ command: 'inspector', args: 'help' }) as { text: string }
-  expect(text).toContain('/inspector report full')
+  expect(text).toContain('/cognita report')
 })
 
 const lastSession = {
@@ -214,12 +214,12 @@ test('the Context tab compares the loadout with the last session in this project
   expect(await ui.find({ key: 'context-change-mcp-github' })).toBeUndefined()
 })
 
-test('/inspector report says what changed since the last session, or that it is the first', async ($, on) => {
+test('/cognita report says what changed since the last session, or that it is the first', async ($, on) => {
   mock.store(on, lastSession)
   mockSession(on)
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
 
-  const { text } = await $.command.run({ command: 'inspector', args: 'report' }) as { text: string }
+  const { text } = await $.command.run({ command: 'cognita', args: 'report' }) as { text: string }
   expect(text).toContain('### Since last session')
   expect(text).toContain('MCP server linear: added, 3,000 tokens')
   expect(text).toContain('MCP server slack: removed, was 2,500 tokens')
@@ -249,7 +249,7 @@ test('a session start measures in the background and warns when the loadout grew
   expect(toasts[0]).toContain('grew +3.4k since last session, mostly MCP server linear (new)')
 })
 
-test('/inspector report json prints machine-readable data', async ($, on) => {
+test('/cognita report json prints machine-readable data', async ($, on) => {
   mock.store(on)
   mockSession(on, [], undefined, { CLAUDE_INSPECTOR_BUDGET: '20k', CLAUDE_INSPECTOR_STARTUP_CHECK: '0' })
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
@@ -261,7 +261,7 @@ test('/inspector report json prints machine-readable data', async ($, on) => {
   expect(data.sinceLastSession).toEqual({ isFirst: true })
 })
 
-test('/inspector history shows the trend including this session', async ($, on) => {
+test('/cognita history shows the trend including this session', async ($, on) => {
   mock.store(on, {
     'history:/workspace': {
       ...lastSession['history:/workspace'],
@@ -271,17 +271,17 @@ test('/inspector history shows the trend including this session', async ($, on) 
   mockSession(on, [], undefined, { CLAUDE_INSPECTOR_STARTUP_CHECK: '0' })
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
 
-  const { text } = await $.command.run({ command: 'inspector', args: 'history' }) as { text: string }
+  const { text } = await $.command.run({ command: 'cognita', args: 'history' }) as { text: string }
   expect(text).toContain('## Loadout history')
   expect(text).toContain('over the last 2 sessions')
   expect(text).toContain('(this session) | claude-opus-5-5 | 27,400 | +3,400 |')
 })
 
-test('/inspector trim prints a plan with commands', async ($, on) => {
+test('/cognita trim prints a plan with commands', async ($, on) => {
   mockSession(on, [], undefined, { CLAUDE_INSPECTOR_STARTUP_CHECK: '0', CLAUDE_INSPECTOR_BUDGET: '25k' })
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
 
-  const { text } = await $.command.run({ command: 'inspector', args: 'trim' }) as { text: string }
+  const { text } = await $.command.run({ command: 'cognita', args: 'trim' }) as { text: string }
   expect(text).toContain('## Trim plan')
   expect(text).toContain('claude plugin disable ops --scope local')
   expect(text).toContain('pick `linear` and choose **Disable**')

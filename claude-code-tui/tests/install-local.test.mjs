@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 test('local install copies all files imported by the hooks module', async () => {
-  const home = await mkdtemp(path.join(os.tmpdir(), 'workspace-dashboard-home-'))
+  const home = await mkdtemp(path.join(os.tmpdir(), 'cognita-home-'))
 
   try {
     const result = spawnSync(process.execPath, ['scripts/install-local.mjs'], {
@@ -20,8 +20,8 @@ test('local install copies all files imported by the hooks module', async () => 
 
     assert.equal(result.status, 0, result.stderr)
 
-    const installedHooks = path.join(home, '.claude', 'skills', 'workspace-dashboard', 'hooks')
-    for (const file of ['register.js', 'agents-view.js', 'context-view.js', 'dashboard-view.js', 'loadout.js', 'utils.js']) {
+    const installedHooks = path.join(home, '.claude', 'skills', 'cognita', 'hooks')
+    for (const file of ['register.js', 'access.js', 'access-view.js', 'agents-view.js', 'context-view.js', 'dashboard-view.js', 'loadout.js', 'theme.js', 'utils.js']) {
       await readFile(path.join(installedHooks, file), 'utf8')
     }
   } finally {

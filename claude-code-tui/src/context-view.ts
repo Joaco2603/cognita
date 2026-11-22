@@ -10,11 +10,8 @@ import {
   type PromptCapture,
 } from './loadout.js'
 import { formatTokenCount, formatTokensShort, slug, type ContextSubview } from './utils.js'
+import { ACCENT, BORDER, ERROR, WARN, keyHints } from './theme.js'
 
-const ACCENT = '#D97757'
-const BORDER = '#343746'
-const WARN = '#F2B84B'
-const ERROR = '#F87171'
 const MAX_ROWS = 12
 
 export function renderContext(ui: UiComponents, options: {
@@ -45,7 +42,7 @@ export function renderContext(ui: UiComponents, options: {
 
   const heading = (text: string) => Text({ children: [text], dimColor: true, bold: true })
   const more = (count: number) =>
-    count > MAX_ROWS ? Text({ children: [`… ${count - MAX_ROWS} more (see /inspector report)`], dimColor: true }) : null
+    count > MAX_ROWS ? Text({ children: [`… ${count - MAX_ROWS} more (see /cognita report)`], dimColor: true }) : null
 
   const changeLabel = (change: LoadoutChange) => {
     const kind = { category: '', mcp: 'MCP · ', skills: 'skills · ', file: 'file · ' }[change.kind]
@@ -310,6 +307,7 @@ export function renderContext(ui: UiComponents, options: {
       Box({ flexDirection: 'column', children: body }),
       actions,
       options.error ? Box({ key: 'context-error', children: [Text({ children: [options.error], color: ERROR })] }) : null,
+      keyHints(ui, 'o m p s y subviews · r measure · x exact count · /cognita report for the full report'),
     ],
   })
 }

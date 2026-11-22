@@ -1,9 +1,6 @@
 import { estimateTokens, meter, pluginSections, share, shortPath, } from './loadout.js';
 import { formatTokenCount, formatTokensShort, slug } from './utils.js';
-const ACCENT = '#D97757';
-const BORDER = '#343746';
-const WARN = '#F2B84B';
-const ERROR = '#F87171';
+import { ACCENT, BORDER, ERROR, WARN, keyHints } from './theme.js';
 const MAX_ROWS = 12;
 export function renderContext(ui, options) {
     const { Box, Button, Text } = ui;
@@ -18,7 +15,7 @@ export function renderContext(ui, options) {
         ],
     });
     const heading = (text) => Text({ children: [text], dimColor: true, bold: true });
-    const more = (count) => count > MAX_ROWS ? Text({ children: [`… ${count - MAX_ROWS} more (see /inspector report)`], dimColor: true }) : null;
+    const more = (count) => count > MAX_ROWS ? Text({ children: [`… ${count - MAX_ROWS} more (see /cognita report)`], dimColor: true }) : null;
     const changeLabel = (change) => {
         const kind = { category: '', mcp: 'MCP · ', skills: 'skills · ', file: 'file · ' }[change.kind];
         const name = change.kind === 'file' ? shortPath(change.name) : change.name;
@@ -234,6 +231,7 @@ export function renderContext(ui, options) {
             Box({ flexDirection: 'column', children: body }),
             actions,
             options.error ? Box({ key: 'context-error', children: [Text({ children: [options.error], color: ERROR })] }) : null,
+            keyHints(ui, 'o m p s y subviews · r measure · x exact count · /cognita report for the full report'),
         ],
     });
 }

@@ -3,9 +3,9 @@
   "owner": { "name": "Joaquin Pappa" },
   "plugins": [
     {
-      "name": "workspace-dashboard",
+      "name": "cognita",
       "source": "./claude-code-tui",
-      "description": "See what your Claude Code session has loaded into context, and what it never uses."
+      "description": "See everything your Claude Code agent has access to: what fills its context, what it never uses, and which tools and risky actions it can run without asking."
     }
   ]
 }
