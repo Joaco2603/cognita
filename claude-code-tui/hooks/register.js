@@ -300,11 +300,13 @@ async function runCommand($, state, event) {
     if (subcommand === 'cost') {
         try {
             const sessionId = await $.session.id();
-            const current = (await $.session.usage({})).cost?.usd;
+            const cost = (await $.session.usage({})).cost;
+            const current = cost?.usd;
+            const isPartial = cost?.hasUnknownPrice === true;
             if (current !== undefined)
-                await saveCost($, state, current, true);
+                await saveCost($, state, current, true, isPartial);
             const entries = costsOf(await $.store.get(costKey(state.currentDirectory)));
-            const view = { now: new Date(), sessionId, current, budget: state.spendBudget, unavailable: current === undefined };
+            const view = { now: new Date(), sessionId, current, budget: state.spendBudget, unavailable: current === undefined, isPartial };
             if (options.has('json'))
                 return { text: '```json\n' + costJson(entries, view) + '\n```' };
             return { text: formatCost(entries, view) };
@@ -572,7 +574,7 @@ export function register(on) {
         const cost = event.cost;
         // Recorded whatever the status line says: the budget and history need it.
         if (cost && typeof cost.usd === 'number')
-            void saveCost($, state, cost.usd);
+            void saveCost($, state, cost.usd, false, cost.hasUnknownPrice === true);
         if (state.isStatusLineEnabled) {
             try {
                 const context = event.context;
@@ -580,7 +582,7 @@ export function register(on) {
                 const held = state.lazy.pendingNames().length;
                 $.ui.status(percent === undefined
                     ? undefined
-                    : [`ctx ${Math.round(percent)}%`, cost ? `$${cost.usd.toFixed(2)}` : '', sinceBadge(state.since), held > 0 ? `${held} MCP held` : ''].filter(Boolean).join(' · '));
+                    : [`ctx ${Math.round(percent)}%`, cost ? `$${cost.usd.toFixed(2)}${cost.hasUnknownPrice ? '+' : ''}` : '', sinceBadge(state.since), held > 0 ? `${held} MCP held` : ''].filter(Boolean).join(' · '));
             }
             catch {
                 // The status line is cosmetic.
@@ -772,7 +774,7 @@ function parseSpendBudget(value) {
  * Saves what this session has cost into the project's store. Throttled: it
  * writes only when the cost grew by a cent. Best effort, never throws.
  */
-function saveCost($, state, usd, force = false) {
+function saveCost($, state, usd, force = false, isPartial = false) {
     state.sessionCost = usd;
     if (!state.currentDirectory || (!force && state.costSaved >= 0 && usd < state.costSaved + 0.01))
         return state.costWrite;
@@ -780,7 +782,7 @@ function saveCost($, state, usd, force = false) {
     state.costWrite = state.costWrite.then(async () => {
         try {
             const key = costKey(state.currentDirectory);
-            const { list, changed } = recordCost(await $.store.get(key), await $.session.id(), usd, dayKey(new Date()));
+            const { list, changed } = recordCost(await $.store.get(key), await $.session.id(), usd, dayKey(new Date()), undefined, isPartial);
             if (changed)
                 await $.store.set(key, list);
         }

@@ -122,3 +122,23 @@ test('formatHistory is unchanged without cost data and adds a $ column with it',
   assert.match(withCost, /\| \$ \|/)
   assert.match(withCost, /\$1\.50/)
 })
+
+test('recordCost marks a session partial once a model had no known price, and keeps it', () => {
+  const first = recordCost([], 's1', 0.5, '2026-11-22', undefined, true).list
+  assert.deepEqual(first, [{ sessionId: 's1', day: '2026-11-22', usd: 0.5, partial: true }])
+  const second = recordCost(first, 's1', 0.9, '2026-11-22').list
+  assert.deepEqual(second, [{ sessionId: 's1', day: '2026-11-22', usd: 0.9, partial: true }])
+  assert.equal(recordCost([{ sessionId: 's2', day: '2026-11-22', usd: 1 }], 's2', 1, '2026-11-22', undefined, true).changed, true)
+})
+
+test('a partial session makes the totals lower bounds in Markdown and JSON', () => {
+  const entries = [{ sessionId: 'aaaaaaaa1', day: '2026-11-22', usd: 0.8, partial: true }, { sessionId: 'bbbbbbbb2', day: '2026-11-22', usd: 1 }]
+  const view = { now: new Date(2026, 10, 22, 12) }
+  const text = formatCost(entries, view)
+  assert.match(text, /Total: at least \$1\.80 in 2 sessions/)
+  assert.match(text, /\| aaaaaaaa \| \$0\.80\+ \|/)
+  assert.match(text, /lower bounds/)
+  assert.equal(JSON.parse(costJson(entries, view)).isPartial, true)
+  assert.equal(JSON.parse(costJson([entries[1]], view)).isPartial, false)
+  assert.doesNotMatch(formatCost([entries[1]], view), /at least/)
+})

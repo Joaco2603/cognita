@@ -7,6 +7,8 @@ export type CostEntry = {
   /** Local day, YYYY-MM-DD. */
   day: string
   usd: number
+  /** Set when a model had no known price: `usd` is a lower bound. */
+  partial?: true
 }
 
 export type BudgetStatus = { budget: number; used: number; percent: number; over: boolean }
@@ -46,7 +48,8 @@ export function dayKey(date: Date): string {
 /**
  * Remembers this session's cost, keeping the highest value seen (cost only
  * grows) and the most recent COST_LIMIT sessions. `changed` is false when
- * nothing needs saving.
+ * nothing needs saving. `isPartial` marks a cost that left out a model
+ * without a known price; once marked, the session stays a lower bound.
  */
 export function recordCost(
   stored: unknown,
@@ -54,23 +57,29 @@ export function recordCost(
   usd: number,
   day: string,
   limit = COST_LIMIT,
+  isPartial = false,
 ): { list: CostEntry[]; changed: boolean } {
   const list = costsOf(stored)
   if (!sessionId || !Number.isFinite(usd) || usd < 0) return { list, changed: false }
   const index = list.findIndex((entry) => entry.sessionId === sessionId)
   if (index >= 0) {
-    if (usd <= list[index].usd) return { list, changed: false }
+    const old = list[index]
+    const partial = isPartial || old.partial === true
+    if (usd <= old.usd && partial === (old.partial === true)) return { list, changed: false }
     const next = list.slice()
-    next[index] = { sessionId, day: list[index].day, usd }
+    next[index] = { sessionId, day: old.day, usd: Math.max(usd, old.usd), ...(partial ? { partial: true as const } : {}) }
     return { list: next, changed: true }
   }
-  return { list: [...list, { sessionId, day, usd }].slice(-limit), changed: true }
+  return { list: [...list, { sessionId, day, usd, ...(isPartial ? { partial: true as const } : {}) }].slice(-limit), changed: true }
 }
 
 const sum = (entries: CostEntry[]) => entries.reduce((total, entry) => total + entry.usd, 0)
 export const money = (usd: number) => `$${usd.toFixed(2)}`
 const plural = (count: number) => `${count} session${count === 1 ? '' : 's'}`
 const round = (usd: number) => Math.round(usd * 10000) / 10000
+/** Whether any figure is a lower bound: a stored session or the live one used a model without a known price. */
+const isPartialView = (entries: CostEntry[], view: CostView) => view.isPartial === true || entries.some((entry) => entry.partial)
+const atLeast = (isPartial: boolean | undefined) => (isPartial ? 'at least ' : '')
 
 /** Spend per local day for the last `days` days ending today, empty days included, oldest first. */
 export function perDay(entries: CostEntry[], days: number, now: Date): { day: string; usd: number }[] {
@@ -114,6 +123,8 @@ export type CostView = {
   budget?: number
   /** True when Claude Code did not report a cost at all. */
   unavailable?: boolean
+  /** True when this session used a model without a known price, so `current` is a lower bound. */
+  isPartial?: boolean
 }
 
 /** Markdown for `/cognita cost`. */
@@ -122,14 +133,16 @@ export function formatCost(entries: CostEntry[], view: CostView): string {
     return view.unavailable ? COST_UNAVAILABLE : 'No cost recorded for this project yet.'
   }
   const days = perDay(entries, DAYS_SHOWN, view.now)
+  const isPartial = isPartialView(entries, view)
   const lines = [
     '## Cost',
     '',
-    `Total: ${money(sum(entries))} in ${plural(entries.length)} (this project)`,
+    `Total: ${atLeast(isPartial)}${money(sum(entries))} in ${plural(entries.length)} (this project)`,
     '',
     `Average per session: ${money(sum(entries) / entries.length)}`,
   ]
-  if (view.current !== undefined) lines.push('', `This session so far: ${money(view.current)}`)
+  if (view.current !== undefined) lines.push('', `This session so far: ${atLeast(view.isPartial)}${money(view.current)}`)
+  if (isPartial) lines.push('', '_A model without a known price was used, so these figures are lower bounds._')
   const status = budgetStatus(entries, view.budget, view.now)
   if (status) {
     lines.push('', `Monthly budget: ${money(status.used)} of ${money(status.budget)} (${status.percent}%)${status.over ? ' - over budget' : ''}`)
@@ -139,7 +152,7 @@ export function formatCost(entries: CostEntry[], view: CostView): string {
   lines.push('```', '', `Last ${Math.min(SESSIONS_SHOWN, entries.length)} session${entries.length === 1 ? "" : "s"}`, '', '| Day | Session | Cost |', '| --- | --- | ---: |')
   for (const entry of entries.slice(-SESSIONS_SHOWN).reverse()) {
     const mark = entry.sessionId === view.sessionId ? ' (this session)' : ''
-    lines.push(`| ${entry.day} | ${entry.sessionId.slice(0, 8)}${mark} | ${money(entry.usd)} |`)
+    lines.push(`| ${entry.day} | ${entry.sessionId.slice(0, 8)}${mark} | ${money(entry.usd)}${entry.partial ? '+' : ''} |`)
   }
   return lines.join('\n')
 }
@@ -152,6 +165,7 @@ export function costJson(entries: CostEntry[], view: CostView): string {
       sessions: entries.length,
       averageUsd: entries.length ? round(sum(entries) / entries.length) : 0,
       currentSessionUsd: view.current ?? null,
+      isPartial: isPartialView(entries, view),
       budget: budgetStatus(entries, view.budget, view.now) ?? null,
       days: perDay(entries, DAYS_SHOWN, view.now),
       recentSessions: entries.slice(-SESSIONS_SHOWN).reverse().map((entry) => ({ sessionId: entry.sessionId, day: entry.day, usd: round(entry.usd) })),
