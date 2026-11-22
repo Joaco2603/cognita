@@ -163,6 +163,15 @@ test('too-broad allow rules are flagged with their source', () => {
   assert.match(formatAccess(report), /Bash\(\*\)/)
 })
 
+test('MCP tools past the probe limit are reported as not checked', () => {
+  const report = analyzeAccess({ tools: [], probes: [], settings: {}, commands: [], mcpSkipped: 12 })
+  assert.equal(report.mcpSkipped, 12)
+  assert.ok(report.flags.includes('12 MCP tools not checked (limit 300).'))
+  assert.match(formatAccess(report), /12 MCP tools not checked \(limit 300\)/)
+  assert.doesNotMatch(formatAccess(report), /No risky action runs without asking/)
+  assert.equal(analyzeAccess({ tools: [], probes: [], settings: {}, commands: [] }).mcpSkipped, 0)
+})
+
 test('a risky probe that could not be checked is flagged and never shows the all-clear', () => {
   const report = analyzeAccess({
     tools: [{ name: 'mcp__github__create_issue', mcp: true }],

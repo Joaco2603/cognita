@@ -79,6 +79,9 @@ export type McpServerAccess = {
 /** An allow rule that grants far more than one command or file. */
 export type BroadRule = { rule: string; source: SettingsSourceName; label: string; why: string }
 
+/** How many MCP tools are asked about; the rest are reported as not checked. */
+export const MCP_PROBE_LIMIT = 300
+
 export type AccessReport = {
   model: string
   version: string
@@ -95,6 +98,8 @@ export type AccessReport = {
   commands: CommandGroup[]
   commandCount: number
   mcpAccess: McpServerAccess[]
+  /** MCP tools past `MCP_PROBE_LIMIT` that were not asked about. */
+  mcpSkipped: number
   broadRules: BroadRule[]
   /** Sentences from `.cognita.json`; empty without a policy. */
   policyViolations: string[]
@@ -112,6 +117,8 @@ export type AccessInput = {
   commands: ReadonlyArray<{ name: string; source: string; plugin?: string }>
   /** One verdict per MCP tool that was probed with an empty input. */
   mcpProbes?: ReadonlyArray<{ name: string; verdict: Verdict }>
+  /** MCP tools that were not probed because of the limit. */
+  mcpSkipped?: number
   policy?: Pick<Policy, 'require'>
   policyWarnings?: string[]
 }
@@ -243,6 +250,7 @@ export function analyzeAccess(input: AccessInput): AccessReport {
   const commands = [...commandMap.values()].sort((left, right) => right.count - left.count || left.source.localeCompare(right.source))
 
   const mcpAccess = groupMcpAccess(input.mcpProbes ?? [])
+  const mcpSkipped = Math.max(0, input.mcpSkipped ?? 0)
   const broadRules = findBroadRules(rules)
   const policyViolations = input.policy ? checkPolicy(input.policy, input.probes) : []
   const hookCount = hooks.reduce((total, group) => total + group.count, 0)
@@ -262,10 +270,11 @@ export function analyzeAccess(input: AccessInput): AccessReport {
     commands,
     commandCount: input.commands.length,
     mcpAccess,
+    mcpSkipped,
     broadRules,
     policyViolations,
     policyWarnings: input.policyWarnings ?? [],
-    flags: findFlags(input.probes, defaultMode, hookCount, policyViolations, mcpAccess, broadRules),
+    flags: findFlags(input.probes, defaultMode, hookCount, policyViolations, mcpAccess, mcpSkipped, broadRules),
   }
 }
 
@@ -275,6 +284,7 @@ function findFlags(
   hookCount: number,
   violations: string[],
   mcpAccess: McpServerAccess[],
+  mcpSkipped: number,
   broadRules: BroadRule[],
 ): string[] {
   const flags: string[] = [...violations]
@@ -290,6 +300,7 @@ function findFlags(
   }
   const mcpUnchecked = mcpAccess.reduce((total, server) => total + server.unknown, 0)
   if (mcpUnchecked > 0) flags.push(`${mcpUnchecked} MCP tool(s) could not be checked.`)
+  if (mcpSkipped > 0) flags.push(`${mcpSkipped} MCP tools not checked (limit ${MCP_PROBE_LIMIT}).`)
   for (const server of mcpAccess.filter((item) => item.allowed.length > 0)) {
     const names = server.allowed.slice(0, 5).join(', ')
     flags.push(`MCP server ${server.server}: ${server.allowed.length} of ${server.checked} tool(s) run without asking (${names}${server.allowed.length > 5 ? ', …' : ''}).`)

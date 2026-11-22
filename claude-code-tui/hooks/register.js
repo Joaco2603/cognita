@@ -1,4 +1,4 @@
-import { analyzeAccess, formatAccess, formatAccessJson, PROBES, SETTINGS_SOURCES } from './access.js';
+import { analyzeAccess, formatAccess, formatAccessJson, MCP_PROBE_LIMIT, PROBES, SETTINGS_SOURCES } from './access.js';
 import { customProbes, mergeAlerts, parsePolicy, policyReadFailure, POLICY_FILE } from './policy.js';
 import { renderAccess } from './access-view.js';
 import { analyzeSupplyChain, formatSupplyChain, formatSupplyChainJson } from './supply-chain.js';
@@ -637,7 +637,9 @@ async function readAccess($, cwd, state) {
             return { ...base, verdict: 'unknown' };
         }
     }));
-    const mcpProbes = await probeMcpTools($, tools.filter((tool) => tool.mcp).map((tool) => tool.name));
+    const mcpNames = tools.filter((tool) => tool.mcp).map((tool) => tool.name);
+    const mcpProbes = await probeMcpTools($, mcpNames);
+    const mcpSkipped = Math.max(0, mcpNames.length - MCP_PROBE_LIMIT);
     const settings = {};
     await Promise.all(SETTINGS_SOURCES.map(async (source) => {
         try {
@@ -652,9 +654,8 @@ async function readAccess($, cwd, state) {
         $.session.model().catch(() => undefined),
         $.session.version().then((value) => value.version).catch(() => undefined),
     ]);
-    return analyzeAccess({ model, version, tools, probes, settings, commands, mcpProbes, policy: state.policy, policyWarnings: state.policyWarnings });
+    return analyzeAccess({ model, version, tools, probes, settings, commands, mcpProbes, mcpSkipped, policy: state.policy, policyWarnings: state.policyWarnings });
 }
-const MCP_PROBE_LIMIT = 300;
 const MCP_PROBE_BATCH = 8;
 /**
  * Asks the permission system about every loaded MCP tool with an empty input.
