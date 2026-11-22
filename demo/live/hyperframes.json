@@ -9,5 +9,12 @@
   "media": {
     "autoProxy": true
   },
-  "authoringSkill": "hyperframes"
+  "authoringSkill": "hyperframes",
+  "registryItems": [
+    {
+      "name": "hw-box-label",
+      "type": "hyperframes:component",
+      "target": "compositions/components/hw-box-label.html"
+    }
+  ]
 }

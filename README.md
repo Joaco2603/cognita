@@ -27,7 +27,7 @@ Then run `/cognita` in a new session.
 
 ## What it looks like
 
-**Live demo video (81 s, voiced):** [English](./demo/cognita-demo-en.mp4) · [Español](./demo/cognita-demo-es.mp4). It is a screen recording of a real Claude Code session: the Overview, `/cognita access` catching `.env` reads, the deny rule added live, the re-check showing it blocked, and `/cognita trim`.
+**Live demo video (96 s, voiced):** [English](./demo/cognita-demo-en.mp4) · [Español](./demo/cognita-demo-es.mp4). A short intro explains what Claude Code loads and the three things Cognita shows, then a screen recording of a real Claude Code session, with zooms and highlights on each finding: the Overview, `/cognita access` catching `.env` reads, the deny rule added live, the re-check showing it blocked, and `/cognita trim`.
 
 Real output of `/cognita access`, trimmed and with the home path shortened:
 
