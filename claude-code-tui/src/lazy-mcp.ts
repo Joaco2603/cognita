@@ -99,6 +99,14 @@ export function createLazyMcp() {
   let cwd = ''
   let startList: Promise<string[]> | undefined
   let writes: Promise<unknown> = Promise.resolve()
+  let listLock: Promise<unknown> = Promise.resolve()
+
+  /** Runs `task` after every earlier hold/release finished, so read-modify-write of the held list never interleaves. */
+  const exclusive = <T>(task: () => Promise<T>): Promise<T> => {
+    const run = listLock.then(task, task)
+    listLock = run.catch(() => undefined)
+    return run
+  }
 
   const folder = async (io: LazyIo): Promise<string> => {
     if (cwd) return cwd
@@ -196,19 +204,21 @@ export function createLazyMcp() {
 
     async hold(io: LazyIo, input: string, servers: readonly McpServerLoad[] = []): Promise<string> {
       if (!input) return listHeld(io)
-      const dir = await folder(io)
-      if (!dir) return 'Could not tell which project this is, so nothing was held.'
-      const list = await readList(io)
-      const match = resolve(input, list, servers)
-      if (!match) return noMatch(input, servers)
-      const key = serverKey(match)
-      const name = nameOf(key) === key ? match : nameOf(key)
-      if (isOwnServer(key)) return 'Cognita does not hold its own server.'
-      if (list.includes(key)) return `${code(name)} is already held for this project.`
-      await io.set(`held:${dir}`, [...list, key])
-      const tokens = servers.find((server) => serverKey(server.server) === key)?.tokens
-      const frees = tokens ? ` (frees ~${tokens.toLocaleString('en-US')} tokens at each start)` : ''
-      return `Held ${code(name)} for this project: it stays off from the next session${frees}. Bring it back any time: ${code(`/cognita connect ${name}`)}.`
+      return exclusive(async () => {
+        const dir = await folder(io)
+        if (!dir) return 'Could not tell which project this is, so nothing was held.'
+        const list = await readList(io)
+        const match = resolve(input, list, servers)
+        if (!match) return noMatch(input, servers)
+        const key = serverKey(match)
+        const name = nameOf(key) === key ? match : nameOf(key)
+        if (isOwnServer(key)) return 'Cognita does not hold its own server.'
+        if (list.includes(key)) return `${code(name)} is already held for this project.`
+        await io.set(`held:${dir}`, [...list, key])
+        const tokens = servers.find((server) => serverKey(server.server) === key)?.tokens
+        const frees = tokens ? ` (frees ~${tokens.toLocaleString('en-US')} tokens at each start)` : ''
+        return `Held ${code(name)} for this project: it stays off from the next session${frees}. Bring it back any time: ${code(`/cognita connect ${name}`)}.`
+      })
     },
 
     async connect(io: LazyIo, input: string, servers: readonly McpServerLoad[] = []): Promise<string> {
@@ -223,15 +233,18 @@ export function createLazyMcp() {
 
     async release(io: LazyIo, input: string, servers: readonly McpServerLoad[] = []): Promise<string> {
       if (!input) return `Say which server to release, or ${code('/cognita release all')}.`
-      const dir = await folder(io)
-      const list = await readList(io)
-      const keys = input.toLowerCase() === 'all'
-        ? list
-        : [resolve(input, list, servers)].filter((match): match is string => Boolean(match)).map(serverKey).filter((key) => list.includes(key))
+      const keys = await exclusive(async () => {
+        const dir = await folder(io)
+        const list = await readList(io)
+        const found = input.toLowerCase() === 'all'
+          ? list
+          : [resolve(input, list, servers)].filter((match): match is string => Boolean(match)).map(serverKey).filter((key) => list.includes(key))
+        if (found.length > 0) await io.set(`held:${dir}`, list.filter((key) => !found.includes(key)))
+        return found
+      })
       if (keys.length === 0) {
         return input.toLowerCase() === 'all' ? 'Nothing held for this project.' : `${code(input)} is not held for this project.`
       }
-      await io.set(`held:${dir}`, list.filter((key) => !keys.includes(key)))
       const live = keys.filter((key) => heldNow.has(key) && !connectedNow.has(key))
       const extra = live.length > 0 ? await connectKeys(io, live, true) : []
       return [`Released ${keys.map((key) => code(nameOf(key))).join(', ')}: ${keys.length === 1 ? 'it loads' : 'they load'} at every start again.`, ...extra].join('\n')

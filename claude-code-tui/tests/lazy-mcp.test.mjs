@@ -142,3 +142,13 @@ test('usage is keyed by the normalized server key, merging both spellings and ol
   assert.deepEqual(countUsed(old, 'Plugin_Neon_Neon').servers, { plugin_neon_neon: { loadedIn: 3, usedIn: 5 } })
   assert.deepEqual(suggestions(countLoaded(old, 's9', ['plugin:neon:neon']), []), [])
 })
+
+test('two quick holds and a hold racing a release all stick', async () => {
+  const servers = [{ server: 'a', tokens: 1 }, { server: 'b', tokens: 1 }, { server: 'c', tokens: 1 }]
+  const { $, store } = fakeApi()
+  const lazy = createLazyMcp()
+  await Promise.all([lazy.hold($, 'a', servers), lazy.hold($, 'b', servers)])
+  assert.deepEqual(store.get('held:/proj'), ['a', 'b'])
+  await Promise.all([lazy.release($, 'a', servers), lazy.hold($, 'c', servers)])
+  assert.deepEqual(store.get('held:/proj'), ['b', 'c'])
+})
