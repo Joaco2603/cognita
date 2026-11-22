@@ -271,3 +271,10 @@ test('the desktop app plan tool sets, advances and checks off items', () => {
   assert.deepEqual(plan.map((item) => item.status), ['completed', 'completed', 'in_progress'])
   assert.equal(isPlanTool(tool), true)
 })
+
+test('starting a desktop plan item sends the one in progress back to pending', () => {
+  const tool = 'mcp__ccd_turn__update_plan'
+  let plan = applyPlanCall([], { tool, input: { items: [{ content: 'Map', status: 'in_progress' }, { content: 'Build', status: 'pending' }, { content: 'Ship', status: 'pending' }] } })
+  plan = applyPlanCall(plan, { tool, input: { start: 3 } })
+  assert.deepEqual(plan.map((item) => item.status), ['pending', 'pending', 'in_progress'])
+})

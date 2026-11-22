@@ -32,7 +32,12 @@ function applyDesktopPlan(plan: readonly PlanItem[], input: Record<string, unkno
     if (following >= 0) next[following] = { ...next[following], status: 'in_progress' }
   }
   const start = Number(input.start)
-  if (Number.isInteger(start) && next[start - 1]) next[start - 1] = { ...next[start - 1], status: 'in_progress' }
+  if (Number.isInteger(start) && next[start - 1]) {
+    // One item is in progress at a time: the one that was goes back to pending.
+    next = next.map((item, index) => index === start - 1
+      ? { ...item, status: 'in_progress' }
+      : item.status === 'in_progress' ? { ...item, status: 'pending' } : item)
+  }
   return next
 }
 
