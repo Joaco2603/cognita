@@ -464,6 +464,29 @@ const PIN_LABELS: Record<Pin, string> = {
 
 const clip = (value: string, limit = 70): string => (value.length > limit ? `${value.slice(0, limit - 1)}…` : value)
 
+const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string | ((...match: string[]) => string)]> = [
+  // URL userinfo: https://user:pass@host
+  [/([a-z][a-z0-9+.-]*:\/\/)[^\s/@"'`]+@/gi, '$1***@'],
+  // URL query string: ?key=value&...
+  [/(\b[a-z][a-z0-9+.-]*:\/\/[^\s"'`?#]*)\?[^\s"'`#]*/gi, '$1?***'],
+  // Authorization / X-Api-Key style headers
+  [/(authorization\s*[:=]\s*)(?:(bearer|basic|token)\s+)?[^\s"'`]+/gi, (_all, head, scheme) => `${head}${scheme ? `${scheme} ` : ''}***`],
+  [/(\bx-[\w-]*(?:key|token|secret)\s*[:=]\s*)[^\s"'`]+/gi, '$1***'],
+  // --token VALUE, --api-key=VALUE, --password "VALUE"
+  [/(--?[\w-]*(?:token|api-?key|password|passwd|secret|credential)s?(?:=|\s+))("[^"]*"|'[^']*'|[^\s"'`]+)/gi, '$1***'],
+  // API_KEY=VALUE, GH_TOKEN="VALUE"
+  [/(\b\w*(?:key|token|secret|password|passwd)=)("[^"]*"|'[^']*'|[^\s"'`]+)/gi, '$1***'],
+]
+
+/** Hides secrets a command line or URL may carry: flag values, env values, headers, URL userinfo and query. */
+function redact(value: string): string {
+  return SECRET_PATTERNS.reduce((result, [pattern, replacement]) => result.replace(pattern, replacement as string), value)
+}
+
+/** A value safe for one Markdown table cell: redacted, on one line, with no backticks. */
+const cell = (value: string): string => redact(value).replace(/\s+/g, ' ').replaceAll('`', "'").trim()
+const codeCell = (value: string): string => (value ? `\`${clip(cell(value))}\`` : '')
+
 /** The supply-chain report as Markdown, for `/cognita supply`. */
 export function formatSupplyChain(report: SupplyChainReport): string {
   const hooks = capped(report.hooks, 30)
@@ -483,7 +506,7 @@ export function formatSupplyChain(report: SupplyChainReport): string {
     '',
     ...table(
       ['Event', 'Matcher', 'Command', 'Source', 'Pinned?'],
-      hooks.shown.map((hook) => [hook.event, hook.matcher, `\`${clip(hook.command)}\``, hook.source, `${PIN_LABELS[hook.pin]}: ${hook.reason}`]),
+      hooks.shown.map((hook) => [cell(hook.event), cell(hook.matcher), codeCell(hook.command), cell(hook.source), `${PIN_LABELS[hook.pin]}: ${cell(hook.reason)}`]),
     ),
     ...(hooks.rest > 0 ? ['', `…and ${hooks.rest} more hook(s).`] : []),
     '',
@@ -491,7 +514,7 @@ export function formatSupplyChain(report: SupplyChainReport): string {
     '',
     ...table(
       ['Server', 'Transport', 'Command or URL', 'Origin', 'Pinned?'],
-      servers.shown.map((server) => [server.name, server.transport, server.command ? `\`${clip(server.command)}\`` : '', server.origin, `${PIN_LABELS[server.pin]}: ${server.reason}`]),
+      servers.shown.map((server) => [cell(server.name), cell(server.transport), codeCell(server.command), cell(server.origin), `${PIN_LABELS[server.pin]}: ${cell(server.reason)}`]),
     ),
     ...(servers.rest > 0 ? ['', `…and ${servers.rest} more server(s).`] : []),
     '',
@@ -499,11 +522,11 @@ export function formatSupplyChain(report: SupplyChainReport): string {
     '',
     ...table(
       ['Plugin', 'State', 'Marketplace', 'Marketplace source'],
-      plugins.shown.map((plugin) => [plugin.name, plugin.enabled ? 'enabled' : 'disabled', plugin.marketplace ?? '', plugin.marketplaceSource ?? 'not declared in settings']),
+      plugins.shown.map((plugin) => [cell(plugin.name), plugin.enabled ? 'enabled' : 'disabled', cell(plugin.marketplace ?? ''), cell(plugin.marketplaceSource ?? 'not declared in settings')]),
     ),
     ...(plugins.rest > 0 ? ['', `…and ${plugins.rest} more plugin(s).`] : []),
     ...(report.unreadable.length > 0
-      ? ['', '### Could not read', '', ...report.unreadable.map((item) => `- ${item}`)]
+      ? ['', '### Could not read', '', ...report.unreadable.map((item) => `- ${cell(item)}`)]
       : []),
     '',
     '_Pinned means an exact version or digest. Unpinned commands fetch whatever is newest each time they start. Nothing was run or changed._',
@@ -512,5 +535,11 @@ export function formatSupplyChain(report: SupplyChainReport): string {
 }
 
 export function formatSupplyChainJson(report: SupplyChainReport): string {
-  return JSON.stringify(report, null, 2)
+  const safe: SupplyChainReport = {
+    ...report,
+    hooks: report.hooks.map((hook) => ({ ...hook, command: redact(hook.command), reason: redact(hook.reason) })),
+    mcpServers: report.mcpServers.map((server) => ({ ...server, command: redact(server.command), reason: redact(server.reason) })),
+    plugins: report.plugins.map((plugin) => (plugin.marketplaceSource ? { ...plugin, marketplaceSource: redact(plugin.marketplaceSource) } : plugin)),
+  }
+  return JSON.stringify(safe, null, 2)
 }

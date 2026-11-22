@@ -149,6 +149,42 @@ test('S2: a download piped into a shell or interpreter is unpinned', () => {
   assert.equal(pin('curl https://example.com | shasum'), 'remote')
 })
 
+const leaky = {
+  user: {
+    hooks: {
+      PreToolUse: [{ matcher: 'Bash', hooks: [
+        { type: 'command', command: 'npx some-tool --token abc123SECRET --api-key=keySECRET --password "pw SECRET"' },
+        { type: 'command', command: 'API_KEY=envSECRET GH_TOKEN="tok SECRET" ./run.sh' },
+        { type: 'command', command: 'curl -H "Authorization: Bearer bearSECRET" https://user:passSECRET@example.com/x?key=querySECRET#frag' },
+      ] }],
+    },
+  },
+  project: { mcpServers: { remote: { type: 'http', url: 'https://example.com/mcp?access_token=urlSECRET' }, run: { command: 'npx', args: ['tool', '--secret', 'argSECRET'] } } },
+}
+
+test('S4: secrets are redacted in Markdown and JSON, whatever the length', () => {
+  const report = analyzeSupplyChain({ settings: leaky, toolServers: [], unreadable: [] })
+  for (const output of [formatSupplyChain(report), formatSupplyChainJson(report)]) {
+    assert.doesNotMatch(output, /SECRET/)
+    assert.doesNotMatch(output, /abc123|passSECRET/)
+  }
+  assert.match(formatSupplyChain(report), /--token \*\*\*/)
+  assert.match(formatSupplyChain(report), /Authorization: Bearer \*\*\*/)
+  assert.match(formatSupplyChainJson(report), /https:\/\/example\.com\/mcp\?\*\*\*/)
+})
+
+test('S4: table cells cannot break the row or the code span', () => {
+  const report = analyzeSupplyChain({
+    settings: { user: { hooks: { Stop: [{ matcher: 'a\nb', hooks: [{ type: 'command', command: 'echo `x`\n| injected |\n## heading' }] }] } } },
+    toolServers: [], unreadable: ['bad\nline'],
+  })
+  const rows = formatSupplyChain(report).split('\n').filter((line) => line.startsWith('| Stop'))
+  assert.equal(rows.length, 1)
+  assert.doesNotMatch(rows[0], /`x`/)
+  assert.doesNotMatch(formatSupplyChain(report), /^## heading/m)
+  assert.doesNotMatch(formatSupplyChain(report), /^line$/m)
+})
+
 test('S3: an MCP command with args is one argv[0], even with spaces', () => {
   assert.equal(pin('/Users/Jane Doe/.nvm/versions/node/v20/bin/npx', ['-y', 'some-tool']), 'unpinned')
   assert.equal(pin('C:\\Program Files\\nodejs\\npx.cmd', ['-y', 'some-tool']), 'unpinned')
