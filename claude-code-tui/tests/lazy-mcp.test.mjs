@@ -130,3 +130,15 @@ test('suggestions use the /mcp display name once the server has been seen', asyn
   await lazy.onConnect($, { server: 'claude.ai Claude Docs' }, engine(passed))
   assert.match(await lazy.hold($, ''), /Suggested: `claude\.ai Claude Docs`/)
 })
+
+test('usage is keyed by the normalized server key, merging both spellings and old stored entries', () => {
+  const loaded = countLoaded(undefined, 's1', ['plugin:neon:neon', 'claude.ai Claude Docs'])
+  const used = countUsed(loaded, 'mcp_plugin_neon_neon'.replace('mcp_', ''))
+  assert.deepEqual(used.servers, {
+    plugin_neon_neon: { loadedIn: 1, usedIn: 1 },
+    claude_ai_claude_docs: { loadedIn: 1, usedIn: 0 },
+  })
+  const old = { sessionId: 's0', servers: { 'plugin:neon:neon': { loadedIn: 2, usedIn: 0 }, plugin_neon_neon: { loadedIn: 1, usedIn: 4 } } }
+  assert.deepEqual(countUsed(old, 'Plugin_Neon_Neon').servers, { plugin_neon_neon: { loadedIn: 3, usedIn: 5 } })
+  assert.deepEqual(suggestions(countLoaded(old, 's9', ['plugin:neon:neon']), []), [])
+})

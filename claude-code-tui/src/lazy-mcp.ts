@@ -48,7 +48,9 @@ function readUsage(stored: unknown): McpUsage {
   if (raw && typeof raw.servers === 'object' && raw.servers !== null) {
     for (const [name, entry] of Object.entries(raw.servers)) {
       if (entry && Number.isFinite(entry.loadedIn) && Number.isFinite(entry.usedIn)) {
-        servers[name] = { loadedIn: entry.loadedIn, usedIn: entry.usedIn }
+        const key = serverKey(name)
+        const seen = servers[key]
+        servers[key] = { loadedIn: (seen?.loadedIn ?? 0) + entry.loadedIn, usedIn: (seen?.usedIn ?? 0) + entry.usedIn }
       }
     }
   }
@@ -60,7 +62,7 @@ export function countLoaded(stored: unknown, sessionId: string, servers: readonl
   const usage = readUsage(stored)
   if (usage.sessionId === sessionId) return usage
   const next: McpUsage = { sessionId, servers: { ...usage.servers } }
-  for (const name of servers) {
+  for (const name of new Set(servers.map(serverKey))) {
     const entry = next.servers[name] ?? { loadedIn: 0, usedIn: 0 }
     next.servers[name] = { ...entry, loadedIn: entry.loadedIn + 1 }
   }
@@ -69,8 +71,9 @@ export function countLoaded(stored: unknown, sessionId: string, servers: readonl
 
 export function countUsed(stored: unknown, server: string): McpUsage {
   const usage = readUsage(stored)
-  const entry = usage.servers[server] ?? { loadedIn: 0, usedIn: 0 }
-  return { ...usage, servers: { ...usage.servers, [server]: { ...entry, usedIn: entry.usedIn + 1 } } }
+  const key = serverKey(server)
+  const entry = usage.servers[key] ?? { loadedIn: 0, usedIn: 0 }
+  return { ...usage, servers: { ...usage.servers, [key]: { ...entry, usedIn: entry.usedIn + 1 } } }
 }
 
 /** Servers worth holding: loaded in enough sessions here and never called, not held already. */
