@@ -569,14 +569,15 @@ export function register(on) {
         return result;
     });
     on('session.measure', ($, event, next) => {
+        const cost = event.cost;
+        // Recorded whatever the status line says: the budget and history need it.
+        if (cost && typeof cost.usd === 'number')
+            void saveCost($, state, cost.usd);
         if (state.isStatusLineEnabled) {
             try {
                 const context = event.context;
-                const cost = event.cost;
                 const percent = context?.percent;
                 const held = state.lazy.pendingNames().length;
-                if (cost && typeof cost.usd === 'number')
-                    void saveCost($, state, cost.usd);
                 $.ui.status(percent === undefined
                     ? undefined
                     : [`ctx ${Math.round(percent)}%`, cost ? `$${cost.usd.toFixed(2)}` : '', sinceBadge(state.since), held > 0 ? `${held} MCP held` : ''].filter(Boolean).join(' · '));
