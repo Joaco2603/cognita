@@ -52,6 +52,8 @@ type Session = {
   /** The text a compaction's summary holds. */
   summary?: string
   requested?: unknown[]
+  /** Claude Code cannot report usage, so nothing is measured. */
+  usageFails?: boolean
 }
 
 function breakdownFor(percent: number) {
@@ -87,6 +89,7 @@ function mockSession(on: any, session: Session) {
   })
   on('session.usage', (_$: any, event: any) => {
     session.requested?.push(event.breakdown)
+    if (session.usageFails) throw new Error('No usage.')
     const context = session.noCountYet && !event.breakdown
       ? { window: 200000 }
       : session.noCountYet
@@ -333,4 +336,22 @@ test('/cognita compact quotes every line of a focus that lists tagged items', as
 
   expect(text).toContain('\n>\n> Tagged items to keep:')
   expect(text).toContain('\n> [c1] constraint: Do not touch main')
+})
+
+test('the Overview offers c compact only once the pressure card can compact', async ($, on) => {
+  await start($, on, { percent: 80, messages: tagged, usageFails: true })
+  await $.command.run({ command: 'cognita', args: '' })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  const ui = await $.ui.mount({ ...pane, surface: 'terminal' })
+
+  expect(await ui.find({ text: '1-4 switch views · r refresh · Esc close · /cognita help for commands' })).toBeDefined()
+})
+
+test('the Overview offers c compact once pressure is measured', async ($, on) => {
+  await start($, on, { percent: 80, messages: tagged })
+  await $.command.run({ command: 'cognita', args: '' })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  const ui = await $.ui.mount({ ...pane, surface: 'terminal' })
+
+  expect(await ui.find({ text: '1-4 switch views · r refresh · c compact · Esc close · /cognita help for commands' })).toBeDefined()
 })
