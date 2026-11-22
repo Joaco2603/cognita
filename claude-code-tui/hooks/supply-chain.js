@@ -465,8 +465,8 @@ const SECRET_PATTERNS = [
     // Authorization / X-Api-Key style headers
     [/(authorization\s*[:=]\s*)(?:(bearer|basic|token)\s+)?[^\s"'`]+/gi, (_all, head, scheme) => `${head}${scheme ? `${scheme} ` : ''}***`],
     [/(\bx-[\w-]*(?:key|token|secret)\s*[:=]\s*)[^\s"'`]+/gi, '$1***'],
-    // --token VALUE, --api-key=VALUE, --password "VALUE"
-    [/(--?[\w-]*(?:token|api-?key|password|passwd|secret|credential)s?(?:=|\s+))("[^"]*"|'[^']*'|[^\s"'`]+)/gi, '$1***'],
+    // --token VALUE, --api-key=VALUE, --password "VALUE", --secret-key, --auth, --cookie, "--token" VALUE
+    [/(["']?--?[\w-]*(?:token|key|password|passwd|secret|credential|auth|bearer|cookie|pat)s?["']?(?:=|\s+))("[^"]*"|'[^']*'|[^\s"'`]+)/gi, '$1***'],
     // API_KEY=VALUE, GH_TOKEN="VALUE"
     [/(\b\w*(?:key|token|secret|password|passwd)=)("[^"]*"|'[^']*'|[^\s"'`]+)/gi, '$1***'],
 ];
@@ -515,11 +515,6 @@ export function formatSupplyChain(report) {
     return lines.join('\n');
 }
 export function formatSupplyChainJson(report) {
-    const safe = {
-        ...report,
-        hooks: report.hooks.map((hook) => ({ ...hook, command: redact(hook.command), reason: redact(hook.reason) })),
-        mcpServers: report.mcpServers.map((server) => ({ ...server, command: redact(server.command), reason: redact(server.reason) })),
-        plugins: report.plugins.map((plugin) => (plugin.marketplaceSource ? { ...plugin, marketplaceSource: redact(plugin.marketplaceSource) } : plugin)),
-    };
-    return JSON.stringify(safe, null, 2);
+    // Every string is redacted, so a secret in a matcher, a name or an unreadable path never reaches a log.
+    return JSON.stringify(report, (_key, value) => (typeof value === 'string' ? redact(value) : value), 2);
 }

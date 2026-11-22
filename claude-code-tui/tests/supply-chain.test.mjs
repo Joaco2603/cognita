@@ -228,3 +228,13 @@ test('S1: wrapper flags and quoted env values do not hide the runner', () => {
   assert.equal(pin('FOO="a b" npx -y some-tool'), 'unpinned')
   assert.equal(pin('FOO="a b" npx -y some-tool@1.2.3'), 'pinned')
 })
+
+test('S4: key, auth, bearer, cookie and pat flags, quoted flags and every JSON field are redacted', () => {
+  const flags = ['--key keySECRET', '--secret-key skSECRET', '--auth authSECRET', '--bearer bearerSECRET', '--cookie cookieSECRET', '--pat patSECRET', '"--token" quotedSECRET']
+  const settings = {
+    user: { hooks: { PreToolUse: [{ matcher: 'Bash(--token matcherSECRET)', hooks: flags.map((flag) => ({ type: 'command', command: `npx some-tool@1.0.0 ${flag}` })) }] } },
+    project: { mcpServers: Object.fromEntries(flags.map((flag, index) => [`s${index}`, { command: 'npx', args: ['tool@1.0.0', ...flag.split(' ')] }])) },
+  }
+  const report = analyzeSupplyChain({ settings, toolServers: [], unreadable: ['/p/.mcp.json?token=unreadableSECRET'] })
+  for (const output of [formatSupplyChain(report), formatSupplyChainJson(report)]) assert.doesNotMatch(output, /SECRET/)
+})
