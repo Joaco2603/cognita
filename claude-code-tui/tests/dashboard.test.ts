@@ -1,152 +1,242 @@
 import { expect, test } from 'claude-code/testing'
 
 const pane = {
-  plugin: 'workspace-dashboard',
+  plugin: 'cognita',
   component: 'Pane',
-  requestId: 'workspace-dashboard',
+  requestId: 'cognita',
   viewport: { columns: 120, rows: 40 },
   props: {
-    title: 'Claude Code Dashboard',
+    title: 'Cognita',
     isFocused: true,
-    bodyColumns: 48,
+    bodyColumns: 90,
     placement: 'dock',
-    scroll: { offset: 0, bodyRows: 32 },
+    scroll: { offset: 0, bodyRows: 36 },
     view: {},
   },
 } as const
 
-async function openDashboard($: any, on: any) {
+const tools = [
+  { name: 'Bash', description: 'Run a command', mcp: false },
+  { name: 'Edit', description: 'Edit a file', mcp: false },
+  { name: 'Read', description: 'Read a file', mcp: false },
+  { name: 'Write', description: 'Write a file', mcp: false },
+  { name: 'mcp__github__create_issue', description: 'Create an issue', mcp: true },
+  { name: 'mcp__github__list_prs', description: 'List PRs', mcp: true },
+  { name: 'mcp__linear__search', description: 'Search', mcp: true },
+]
+
+const settings: Record<string, unknown> = {
+  user: {
+    permissions: { allow: ['Bash(git push:*)', 'Read(~/.ssh/**)'], deny: ['Read(./.env)'] },
+    hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'audit.sh' }] }] },
+    enabledPlugins: { 'cognita@cognita': true, 'old@market': false },
+  },
+  project: { permissions: { ask: ['Bash(rm:*)'] } },
+}
+
+/** What the permission system answers for each sample call. */
+function verdictFor(tool: string, input: any): { decision: 'allow' | 'ask' | 'deny'; rule?: string } {
+  const command = String(input?.command ?? '')
+  const path = String(input?.file_path ?? '').replaceAll('\\', '/')
+  if (tool === 'Bash' && command.startsWith('git push')) return { decision: 'allow', rule: 'Bash(git push:*)' }
+  if (tool === 'Bash' && command.startsWith('rm')) return { decision: 'ask', rule: 'Bash(rm:*)' }
+  if (tool === 'Read' && path.endsWith('.ssh/id_rsa')) return { decision: 'allow', rule: 'Read(~/.ssh/**)' }
+  if (tool === 'Read' && path.endsWith('.env')) return { decision: 'deny', rule: 'Read(./.env)' }
+  if (tool === 'Read') return { decision: 'allow' }
+  return { decision: 'ask' }
+}
+
+function mockSession(on: any, options: { checks?: string[]; commands?: string[]; agents?: any[]; opened?: string[]; failTools?: boolean } = {}) {
   on('env.get', (_$: any, event: any) => ({
-    value: event.name === 'HOME' ? '/home/user' : undefined,
-  }))
-  on('fs.list', (_$: any, event: any) => ({
-    // The engine resolves paths natively (C:\home\user\programming on Windows).
-    value: String(event.path).replaceAll('\\', '/').endsWith('/home/user/programming')
-      ? [
-          { name: 'mixai', kind: 'directory', isLink: false },
-          { name: 'clases', kind: 'directory', isLink: false },
-          { name: '.private', kind: 'directory', isLink: false },
-          { name: 'linked-project', kind: 'directory', isLink: true },
-        ]
-      : [],
+    value: event.name === 'HOME' ? '/home/user' : event.name === 'CLAUDE_INSPECTOR_STARTUP_CHECK' ? '0' : undefined,
   }))
   on('ui.toast', () => ({ value: undefined }))
   on('session.start', () => ({ cwd: '/workspace' }))
-  on('command.register', () => ({ value: undefined }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.id', () => ({ value: 'this-session' }))
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('session.version', () => ({ value: { version: '2.1.330' } }))
+  on('command.register', (_$: any, event: any) => {
+    options.commands?.push(event.name)
+    return { value: undefined }
+  })
+  on('command.list', () => ({
+    value: [
+      { name: 'clear', description: 'Clear', source: 'builtin' },
+      { name: 'cognita', description: 'Cognita', source: 'plugin', plugin: 'cognita' },
+      { name: 'deploy', description: 'Deploy', source: 'user' },
+    ],
+  }))
+  on('ui.open', (_$: any, event: any) => {
+    options.opened?.push(event.id)
+    return { value: { isPlaced: true } }
+  })
+  on('tool.list', () => {
+    if (options.failTools) throw new Error('not available')
+    return { value: tools }
+  })
+  on('tool.check', (_$: any, event: any) => {
+    options.checks?.push(`${event.tool} ${event.input?.command ?? event.input?.file_path ?? event.input?.url ?? ''}`)
+    return verdictFor(event.tool, event.input)
+  })
+  on('settings.read', (_$: any, event: any) => ({ value: settings[event.source] ?? {} }))
+  on('agent.list', () => ({ value: options.agents ?? [] }))
+}
+
+async function openCognita($: any, on: any, options: Parameters<typeof mockSession>[1] = {}) {
+  mockSession(on, options)
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
-  await $.command.run({ command: 'inspector', args: '' })
+  await $.command.run({ command: 'cognita', args: '' })
+  // The pane fills itself in the background once it opens.
+  await new Promise((resolve) => setTimeout(resolve, 20))
   return $.ui.mount({ ...pane, surface: 'terminal' })
 }
 
-test('registers the /inspector command when a Claude Code session starts', async ($, on) => {
-  const registered: string[] = []
-  on('session.start', () => ({ cwd: '/workspace' }))
-  on('command.register', ($: any, event: any) => {
-    registered.push(event.name)
-    return { value: undefined }
-  })
+const runningAgent = {
+  id: 'agent-active',
+  name: 'reviewer',
+  description: 'Review changes',
+  type: 'Explore',
+  status: 'running',
+  taskStatus: 'running',
+  label: 'Checking files',
+  cwd: '/workspace',
+  startTime: 1,
+  tokenCount: 2400,
+  tokenSamples: [900, 1600, 2400],
+  kind: 'local_agent',
+  hasRow: true,
+}
 
+const finishedAgent = {
+  ...runningAgent,
+  id: 'agent-inactive',
+  name: 'planner',
+  description: 'Plan the implementation',
+  type: 'Plan',
+  status: 'completed',
+  taskStatus: 'completed',
+  label: 'Finished plan',
+  tokenCount: 1800,
+  tokenSamples: [500, 1200, 1800],
+}
+
+test('registers /cognita and keeps /inspector as an alias', async ($, on) => {
+  const commands: string[] = []
+  mockSession(on, { commands })
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
 
-  expect(registered).toEqual(['inspector'])
+  expect(commands).toEqual(['cognita', 'inspector'])
+  const { text } = await $.command.run({ command: 'inspector', args: 'help' }) as { text: string }
+  expect(text).toContain('/cognita access')
 })
 
-test('the dashboard pane contains the requested navigation and workspaces', async ($, on) => {
-  const ui = await openDashboard($, on)
+test('the pane opens on the Overview with four views in the sidebar', async ($, on) => {
+  const ui = await openCognita($, on)
 
-  expect(await ui.find({ key: 'tab-dashboard' })).toBeDefined()
+  expect(await ui.find({ text: '◆ Cognita' })).toBeDefined()
+  expect(await ui.find({ key: 'tab-overview' })).toBeDefined()
+  expect(await ui.find({ key: 'tab-context' })).toBeDefined()
+  expect(await ui.find({ key: 'tab-access' })).toBeDefined()
   expect(await ui.find({ key: 'tab-agents' })).toBeDefined()
-  expect(await ui.find({ key: 'action-new' })).toBeDefined()
-  expect(await ui.find({ key: 'action-search' })).toBeDefined()
-  expect(await ui.find({ key: 'workspace-mixai' })).toBeDefined()
-  expect(await ui.find({ key: 'workspace-clases' })).toBeDefined()
-  expect(await ui.find({ key: 'workspace-linked-project' })).toBeUndefined()
-  expect(await ui.find({ key: 'workspace-agent-verifier' })).toBeUndefined()
-  expect(await ui.find({ key: 'user-settings' })).toBeUndefined()
+  expect(await ui.find({ key: 'overview-panel' })).toBeDefined()
+  expect(await ui.find({ text: 'workspace' })).toBeDefined()
+  expect(await ui.find({ key: 'key-hints' })).toBeDefined()
 })
 
-test('the dashboard opens with left navigation and a centered welcome screen', async ($, on) => {
-  const ui = await openDashboard($, on)
+test('the Overview sums up access and flags risky actions that run without asking', async ($, on) => {
+  const ui = await openCognita($, on)
 
-  expect(await ui.find({ text: 'Claude Code' })).toBeDefined()
-  expect(await ui.find({ text: '✳' })).toBeDefined()
-  expect(await ui.find({ text: 'What would you like to work on?' })).toBeDefined()
-  expect(await ui.find({ key: 'selected-workspace-card' })).toBeDefined()
-  expect(await ui.find({ text: '/workspace' })).toBeDefined()
-  expect(await ui.find({ key: 'tab-dashboard' })).toBeDefined()
-  expect(await ui.find({ key: 'tab-agents' })).toBeDefined()
+  expect(await ui.find({ text: '7 tools · 2 MCP servers · 3 slash commands' })).toBeDefined()
+  expect(await ui.find({ text: '⚠ Runs without asking: push to a git remote, read ssh keys' })).toBeDefined()
+  expect(await ui.find({ key: 'overview-access-open' })).toBeDefined()
 })
 
-test('the Agents tab switches the pane content', async ($, on) => {
-  const ui = await openDashboard($, on)
+test('the Access tab lists what each sample action would do, without running it', async ($, on) => {
+  const checks: string[] = []
+  const ui = await openCognita($, on, { checks })
+  await ui.press({ key: 'tab-access' })
 
-  await ui.press({ key: 'tab-agents' })
-  expect(await ui.find({ key: 'agents-menu-running' })).toBeDefined()
-  expect(await ui.find({ key: 'agents-menu-launch' })).toBeDefined()
+  expect(await ui.find({ key: 'access-header' })).toBeDefined()
+  expect(await ui.find({ key: 'access-probe-push' })).toBeDefined()
+  expect(await ui.find({ text: '● Push to a git remote ⚠' })).toBeDefined()
+  expect(await ui.find({ text: '○ Read .env secrets ⚠' })).toBeDefined()
+  expect(await ui.find({ text: '◐ Delete files (rm -rf) ⚠' })).toBeDefined()
+  // WebFetch is not in the tool list, so it is reported, not checked.
+  expect(await ui.find({ text: '· Fetch web pages' })).toBeDefined()
+  expect(checks.some((check) => check.startsWith('WebFetch'))).toBe(false)
+  expect(checks).toContain('Bash git push')
 })
 
-test('the Dashboard refreshes its token summary and context snapshot', async ($, on) => {
-  on('agent.list', () => ({
-    value: [{
-      id: 'agent-1',
-      name: 'reviewer',
-      description: 'Review the selected workspace',
-      type: 'Explore',
-      status: 'running',
-      taskStatus: 'running',
-      label: 'Checking changed files',
-      cwd: '/workspace/mixai',
-      startTime: 1,
-      tokenCount: 2400,
-      tokenSamples: [900, 1600, 2400],
-      kind: 'local_agent',
-      hasRow: true,
-    }],
-  }))
-  const ui = await openDashboard($, on)
+test('the Access tab shows tools, rules, hooks and plugins', async ($, on) => {
+  const ui = await openCognita($, on)
+  await ui.press({ key: 'tab-access' })
 
-  await ui.press({ key: 'dashboard-stats-refresh' })
+  await ui.press({ key: 'access-menu-tools' })
+  expect(await ui.find({ key: 'access-mcp-github' })).toBeDefined()
+  expect(await ui.find({ key: 'access-mcp-linear' })).toBeDefined()
+  expect(await ui.find({ text: 'Bash  Edit  Read  Write' })).toBeDefined()
 
-  expect(await ui.find({ text: 'CONTEXT OVERVIEW' })).toBeDefined()
-  expect(await ui.find({ text: '2,400' })).toBeDefined()
+  await ui.press({ key: 'access-menu-rules' })
+  expect(await ui.find({ text: 'Bash(git push:*)' })).toBeDefined()
+  expect(await ui.find({ text: 'Bash(rm:*)' })).toBeDefined()
+  expect(await ui.find({ key: 'access-source-user' })).toBeDefined()
+
+  await ui.press({ key: 'access-menu-hooks' })
+  expect(await ui.find({ key: 'access-hook-pretooluse' })).toBeDefined()
+  expect(await ui.find({ key: 'access-plugin-cognita-cognita' })).toBeDefined()
 })
 
-test('Agents shows active details, switches to inactive agents, and filters them', async ($, on) => {
-  const reportedAgents: any[] = [
-      {
-        id: 'agent-active',
-        name: 'reviewer',
-        description: 'Review changes',
-        type: 'Explore',
-        status: 'running',
-        taskStatus: 'running',
-        label: 'Checking files',
-        cwd: '/workspace',
-        startTime: 1,
-        tokenCount: 2400,
-        tokenSamples: [900, 1600, 2400],
-        kind: 'local_agent',
-        hasRow: true,
-      },
-      {
-        id: 'agent-inactive',
-        name: 'planner',
-        description: 'Plan the implementation',
-        type: 'Plan',
-        status: 'completed',
-        taskStatus: 'completed',
-        label: 'Finished plan',
-        cwd: '/workspace',
-        startTime: 1,
-        tokenCount: 1800,
-        tokenSamples: [500, 1200, 1800],
-        kind: 'local_agent',
-        hasRow: true,
-      },
-    ]
-  on('agent.list', () => ({ value: reportedAgents }))
-  const ui = await openDashboard($, on)
+test('Access explains itself before the first check and shows a friendly error', async ($, on) => {
+  mockSession(on, { failTools: true })
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
+  await $.command.run({ command: 'cognita', args: 'access open' })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const ui = await $.ui.mount({ ...pane, surface: 'terminal' })
+
+  expect(await ui.find({ text: 'WHAT YOUR AGENT CAN DO' })).toBeDefined()
+  expect(await ui.find({ key: 'access-error' })).toBeDefined()
+  expect(await ui.find({ key: 'access-refresh' })).toBeDefined()
+})
+
+test('/cognita access prints a markdown report without opening the pane', async ($, on) => {
+  const opened: string[] = []
+  mockSession(on, { opened })
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
+
+  const { text } = await $.command.run({ command: 'cognita', args: 'access' }) as { text: string }
+
+  expect(opened).toEqual([])
+  expect(text).toContain('## What this agent can do')
+  expect(text).toContain('Model `claude-opus-5-5` · Claude Code 2.1.330')
+  expect(text).toContain('2 risky action(s) run without asking: push to a git remote, read ssh keys.')
+  expect(text).toContain('| github | 2 |')
+  expect(text).toContain('rule `Bash(git push:*)`')
+  expect(text).toContain('| PreToolUse | 1 | user |')
+})
+
+test('/cognita access json prints machine-readable data', async ($, on) => {
+  mockSession(on)
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
+
+  const { text } = await $.command.run({ command: 'cognita', args: 'access json' }) as { text: string }
+  const data = JSON.parse(text.replace(/^```json\n/, '').replace(/\n```$/, ''))
+  expect(data.totalTools).toBe(7)
+  expect(data.mcpServers).toEqual([{ server: 'github', tools: 2 }, { server: 'linear', tools: 1 }])
+  expect(data.probes.find((probe: any) => probe.key === 'push').verdict).toBe('allow')
+})
+
+test('an unknown option explains the commands', async ($, on) => {
+  mockSession(on)
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
+
+  const { text } = await $.command.run({ command: 'cognita', args: 'nope' }) as { text: string }
+  expect(text).toContain('Unknown option "nope"')
+  expect(text).toContain('/cognita report')
+})
+
+test('the Agents tab shows active agents, details, and filters inactive ones', async ($, on) => {
+  const reportedAgents: any[] = [structuredClone(runningAgent), structuredClone(finishedAgent)]
+  const ui = await openCognita($, on, { agents: reportedAgents })
 
   await ui.press({ key: 'tab-agents' })
   expect(await ui.find({ key: 'agent-card-agent-active' })).toBeDefined()
@@ -154,7 +244,7 @@ test('Agents shows active details, switches to inactive agents, and filters them
 
   await ui.press({ key: 'agent-card-agent-active' })
   expect(await ui.find({ key: 'agent-detail' })).toBeDefined()
-  expect(await ui.find({ text: '900 → 1,600 → 2,400' })).toBeDefined()
+  expect(await ui.find({ text: 'Token samples: 900 → 1,600 → 2,400' })).toBeDefined()
   reportedAgents[0].tokenCount = 3000
   reportedAgents[0].tokenSamples.push(3000)
   await ui.press({ key: 'agent-detail-refresh' })
@@ -171,43 +261,20 @@ test('Agents shows active details, switches to inactive agents, and filters them
   expect(await ui.find({ key: 'agent-card-agent-inactive' })).toBeUndefined()
 })
 
-test('the Agents submenu displays the current session agents in cards', async ($, on) => {
-  on('agent.list', () => ({
-    value: [{
-      id: 'agent-1',
-      name: 'reviewer',
-      description: 'Review the selected workspace',
-      type: 'Explore',
-      status: 'running',
-      taskStatus: 'running',
-      label: 'Checking changed files',
-      cwd: '/workspace/mixai',
-      startTime: 1,
-      tokenCount: 0,
-      tokenSamples: [],
-      kind: 'local_agent',
-      hasRow: true,
-    }],
-  }))
-  const ui = await openDashboard($, on)
+test('the Overview counts the session agents', async ($, on) => {
+  const ui = await openCognita($, on, { agents: [runningAgent, finishedAgent] })
 
-  await ui.press({ key: 'tab-agents' })
-  await ui.press({ key: 'agents-menu-running' })
-
-  expect(await ui.find({ key: 'agent-card-agent-1' })).toBeDefined()
-  expect(await ui.find({ text: 'Checking changed files' })).toBeDefined()
+  expect(await ui.find({ text: '1 running · 1 finished · 4.2k tokens' })).toBeDefined()
 })
 
-test('the Agents submenu launches an agent in the selected workspace', async ($, on) => {
+test('the Agents tab launches an agent in the current project', async ($, on) => {
   const spawned: Array<Record<string, unknown>> = []
-  on('agent.list', () => ({ value: [] }))
   on('agent.spawn', (_$: any, event: Record<string, unknown>) => {
     spawned.push(event)
     return { agentId: 'agent-2', model: 'sonnet' }
   })
-  const ui = await openDashboard($, on)
+  const ui = await openCognita($, on)
 
-  await ui.press({ key: 'workspace-mixai' })
   await ui.press({ key: 'tab-agents' })
   await ui.press({ key: 'agents-menu-launch' })
   await ui.input({ key: 'agent-prompt', text: 'Review the current branch' })
@@ -217,40 +284,7 @@ test('the Agents submenu launches an agent in the selected workspace', async ($,
     prompt: 'Review the current branch',
     description: 'Review the current branch',
     run_in_background: true,
-    cwd: '/home/user/programming/mixai',
+    cwd: '/workspace',
   }])
 })
 
-test('New starts a fresh conversation in the current workspace', async ($, on) => {
-  const commands: string[] = []
-  on('session.start', () => ({ cwd: '/workspace' }))
-  on('command.register', () => ({ value: undefined }))
-  on('command.run', ($: any, event: any) => {
-    commands.push(event.command)
-    return { text: '' }
-  })
-  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
-
-  const ui = await $.ui.mount({ ...pane, surface: 'terminal' })
-  await ui.press({ key: 'action-new' })
-
-  expect(commands).toEqual(['clear'])
-})
-
-test('selecting a workspace updates the dashboard', async ($, on) => {
-  const ui = await openDashboard($, on)
-
-  await ui.press({ key: 'workspace-mixai' })
-  expect(await ui.find({ key: 'selected-workspace-card' })).toBeDefined()
-  expect(await ui.find({ text: 'mixai' })).toBeDefined()
-})
-
-test('search filters the pinned workspace list', async ($, on) => {
-  const ui = await openDashboard($, on)
-
-  await ui.press({ key: 'action-search' })
-  await ui.input({ key: 'workspace-search', text: 'mixai' })
-
-  expect(await ui.find({ key: 'workspace-mixai' })).toBeDefined()
-  expect(await ui.find({ key: 'workspace-clases' })).toBeUndefined()
-})

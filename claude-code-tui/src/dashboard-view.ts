@@ -1,166 +1,188 @@
-import { meter, type Loadout } from './loadout.js'
-import { formatTokenCount, formatTokensShort, slug, type DashboardTab, type Workspace } from './utils.js'
+import { riskyAllowed, type AccessReport } from './access.js'
+import { baseTokensOf, meter, type Loadout } from './loadout.js'
+import { ACCENT, BORDER, ERROR, OK, WARN, keyHints } from './theme.js'
+import { formatTokensShort, isActiveAgent, type DashboardTab } from './utils.js'
+
+const TABS: Array<{ tab: DashboardTab; label: string; hotkey: string }> = [
+  { tab: 'overview', label: 'Overview', hotkey: '1' },
+  { tab: 'context', label: 'Context', hotkey: '2' },
+  { tab: 'access', label: 'Access', hotkey: '3' },
+  { tab: 'agents', label: 'Agents', hotkey: '4' },
+]
+
+const TAB_HINTS: Record<DashboardTab, string> = {
+  overview: 'everything at a glance',
+  context: 'what fills the window',
+  access: 'tools, rules, hooks',
+  agents: 'subagents at work',
+}
 
 export function renderSidebar(ui: UiComponents, options: {
   activeTab: DashboardTab
-  workspaces: Workspace[]
-  selectedWorkspace: string
-  searchOpen: boolean
-  searchValue: string
-  redraw: () => void
-  onNewConversation: () => void
-  onSearchOpen: () => void
-  onSearchInput: (value: string) => void
-  onSearchSubmit: (value: string) => void
-  onWorkspaceSelect: (workspace: Workspace) => void
-  onTabSelect: (tab: DashboardTab) => Promise<void>
+  project: string
+  model: string
+  onTabSelect: (tab: DashboardTab) => void
 }): unknown {
-  const { Box, Button, Input, Text } = ui
-  const filteredWorkspaces = options.workspaces.filter((workspace) =>
-    workspace.name.toLowerCase().includes(options.searchValue.trim().toLowerCase()),
-  )
-
-  const workspaceButtons = filteredWorkspaces.map((workspace, index) =>
-    Button({
-      key: `workspace-${slug(workspace.name)}`,
-      label: `${options.selectedWorkspace === workspace.path ? '▸ ' : '  '}${workspace.name}`,
-      hotkey: index === 0 ? 'w' : undefined,
-      plain: true,
-      dimColor: options.selectedWorkspace !== workspace.path,
-      onPress: () => options.onWorkspaceSelect(workspace),
-    }),
-  )
-
-  const tabButton = (tab: DashboardTab, label: string, hotkey: string) =>
-    Button({
-      key: `tab-${tab}`,
-      label: `${options.activeTab === tab ? '▸ ' : '  '}${label}`,
-      hotkey,
-      plain: true,
-      dimColor: options.activeTab !== tab,
-      onPress: () => options.onTabSelect(tab),
-    })
-
+  const { Box, Button, Text } = ui
   return Box({
     flexDirection: 'column',
-    width: 27,
+    width: 26,
     rowGap: 1,
     padding: 1,
     borderStyle: 'round',
-    borderColor: '#343746',
+    borderColor: BORDER,
     children: [
-      Text({ children: ['✳ Claude Code'], bold: true, color: '#D97757' }),
-      Button({
-        key: 'action-new',
-        label: '＋  New conversation',
-        hotkey: 'n',
-        plain: true,
-        onPress: options.onNewConversation,
+      Box({
+        flexDirection: 'column',
+        children: [
+          Text({ key: 'brand', children: ['◆ Cognita'], bold: true, color: ACCENT }),
+          Text({ children: ['what your agent sees'], dimColor: true }),
+        ],
       }),
-      options.searchOpen
-        ? Input({
-            key: 'workspace-search',
-            label: 'Search',
-            placeholder: 'Search workspaces',
-            value: options.searchValue,
-            autoFocus: true,
-            onInput: options.onSearchInput,
-            onSubmit: options.onSearchSubmit,
-          })
-        : Button({
-            key: 'action-search',
-            label: '⌕  Search',
-            hotkey: 'f',
-            plain: true,
-            onPress: options.onSearchOpen,
-          }),
-      Text({ children: ['WORKSPACES'], dimColor: true, bold: true }),
-      ...workspaceButtons,
-      Text({ children: ['NAVIGATE'], dimColor: true, bold: true }),
-      tabButton('dashboard', 'Dashboard', '1'),
-      tabButton('context', 'Context', '2'),
-      tabButton('agents', 'Agents', '3'),
+      Box({
+        key: 'sidebar-project',
+        flexDirection: 'column',
+        children: [
+          Text({ children: ['PROJECT'], dimColor: true, bold: true }),
+          Text({ children: [options.project || 'unknown'], wrap: 'truncate-middle' }),
+          options.model ? Text({ children: [options.model], dimColor: true, wrap: 'truncate-end' }) : null,
+        ],
+      }),
+      Box({
+        flexDirection: 'column',
+        children: [
+          Text({ children: ['VIEWS'], dimColor: true, bold: true }),
+          ...TABS.map(({ tab, label, hotkey }) =>
+            Button({
+              key: `tab-${tab}`,
+              label: `${options.activeTab === tab ? '▸' : ' '} ${hotkey} ${label}`,
+              hotkey,
+              plain: true,
+              bold: options.activeTab === tab,
+              dimColor: options.activeTab !== tab,
+              onPress: () => options.onTabSelect(tab),
+            })),
+        ],
+      }),
+      Text({ key: 'sidebar-hint', children: [TAB_HINTS[options.activeTab]], dimColor: true, wrap: 'wrap' }),
+      Text({ children: ['Esc closes'], dimColor: true }),
     ],
   })
 }
 
-export function renderDashboard(ui: UiComponents, options: {
-  selected: Workspace
-  sessionAgents: AgentInfo[]
-  contextSnapshots: Array<{ capturedAt: string; text: string }>
+export function renderOverview(ui: UiComponents, options: {
   loadout?: Loadout
-  dashboardError: string
-  onRefreshContext: () => void
-  onOpenContext: () => void
+  access?: AccessReport
+  sessionAgents: AgentInfo[]
+  loading: boolean
+  error: string
+  onRefresh: () => void
+  onOpen: (tab: DashboardTab) => void
 }): unknown {
   const { Box, Button, Text } = ui
-  const totalSubagentTokens = options.sessionAgents.reduce(
-    (total, agent) => total + (Number.isFinite(agent.tokenCount) ? agent.tokenCount : 0),
-    0,
-  )
+
+  const card = (key: string, title: string, tab: DashboardTab, hotkey: string, lines: unknown[], borderColor = BORDER) =>
+    Box({
+      key,
+      flexDirection: 'column',
+      padding: 1,
+      borderStyle: 'round',
+      borderColor,
+      children: [
+        Box({
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          children: [
+            Text({ children: [title], bold: true, color: ACCENT }),
+            Button({ key: `${key}-open`, label: `details → ${hotkey}`, plain: true, dimColor: true, onPress: () => options.onOpen(tab) }),
+          ],
+        }),
+        ...lines,
+      ],
+    })
+
+  const pending = (text: string) => Text({ children: [options.loading ? 'Measuring…' : text], dimColor: true })
+
+  const loadout = options.loadout
+  const contextLines: unknown[] = loadout
+    ? [
+        Text({
+          key: 'overview-meter',
+          children: [`${meter(loadout.percentage, 20)} ${Math.round(loadout.percentage)}% of ${formatTokensShort(loadout.maxTokens)}`],
+          color: loadout.percentage >= 80 ? ERROR : loadout.percentage >= 50 ? WARN : OK,
+        }),
+        Text({ key: 'overview-base', children: [`${formatTokensShort(baseTokensOf(loadout))} tokens load before your first message`] }),
+        Text({
+          key: 'overview-files',
+          children: [`${loadout.memoryFiles.length} instruction files · ${loadout.mcpServers.length} MCP servers · ${loadout.skills.length} skills · ${loadout.agents.length} agent types`],
+          dimColor: true,
+        }),
+        loadout.idleTokens > 0
+          ? Text({ key: 'overview-idle', children: [`⚠ ${formatTokensShort(loadout.idleTokens)} tokens loaded but never used this session`], color: WARN })
+          : Text({ key: 'overview-idle', children: ['✓ Everything loaded has been used'], color: OK }),
+        loadout.levers[0]
+          ? Text({ key: 'overview-lever', children: [`Biggest saving: ${loadout.levers[0].text}`], dimColor: true, wrap: 'wrap' })
+          : null,
+      ]
+    : [pending('Not measured yet. Press r.')]
+
+  const access = options.access
+  const risky = access ? riskyAllowed(access) : []
+  const accessLines: unknown[] = access
+    ? [
+        Text({
+          key: 'overview-tools',
+          children: [`${access.totalTools} tools · ${access.mcpServers.length} MCP servers · ${access.commandCount} slash commands`],
+        }),
+        Text({
+          key: 'overview-rules',
+          children: [`mode ${access.defaultMode} · ${access.rules.reduce((total, rules) => total + rules.allow.length + rules.ask.length + rules.deny.length, 0)} permission rules · ${access.hookCount} hooks · ${access.plugins.filter((plugin) => plugin.isEnabled).length} plugins`],
+          dimColor: true,
+        }),
+        access.defaultMode === 'bypassPermissions'
+          ? Text({ key: 'overview-risk', children: ['⚠ bypassPermissions: every tool runs without asking'], color: ERROR })
+          : risky.length > 0
+            ? Text({ key: 'overview-risk', children: [`⚠ Runs without asking: ${risky.map((probe) => probe.label.toLowerCase()).join(', ')}`], color: WARN, wrap: 'wrap' })
+            : Text({ key: 'overview-risk', children: ['✓ No risky action runs without asking'], color: OK }),
+      ]
+    : [pending('Not checked yet. Press r.')]
+
+  const running = options.sessionAgents.filter(isActiveAgent)
+  const agentLines: unknown[] = [
+    Text({
+      key: 'overview-agents',
+      children: [options.sessionAgents.length === 0
+        ? 'No subagents in this session yet.'
+        : `${running.length} running · ${options.sessionAgents.length - running.length} finished · ${formatTokensShort(options.sessionAgents.reduce((total, agent) => total + (Number.isFinite(agent.tokenCount) ? agent.tokenCount : 0), 0))} tokens`],
+      dimColor: options.sessionAgents.length === 0,
+    }),
+  ]
 
   return Box({
+    key: 'overview-panel',
     flexDirection: 'column',
     flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     rowGap: 1,
     children: [
-      Text({ children: ['  ·    ·'], color: '#D97757' }),
-      Text({ children: ['·   ✳   ·'], color: '#D97757', bold: true }),
-      Text({ children: ['  ·    ·'], color: '#D97757' }),
-      Text({ children: ['Welcome back'], bold: true }),
-      Text({ children: ['What would you like to work on?'] }),
       Box({
-        key: 'selected-workspace-card',
-        flexDirection: 'column',
-        rowGap: 1,
-        padding: 1,
-        width: 42,
-        borderStyle: 'round',
-        borderColor: '#D97757',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
         children: [
-          Text({ children: ['SELECTED WORKSPACE'], dimColor: true, bold: true }),
-          Text({ children: [options.selected.name], bold: true }),
-          Text({ children: [options.selected.path], dimColor: true }),
+          Text({ children: ['WHAT YOUR AGENT SEES AND CAN DO'], bold: true }),
+          Button({
+            key: 'overview-refresh',
+            label: options.loading ? '↻ Checking…' : '↻ Refresh',
+            hotkey: 'r',
+            plain: true,
+            onPress: options.onRefresh,
+          }),
         ],
       }),
-      Box({
-        key: 'context-overview-card',
-        flexDirection: 'column',
-        rowGap: 1,
-        padding: 1,
-        width: 52,
-        borderStyle: 'round',
-        borderColor: '#343746',
-        children: [
-          Text({ children: ['CONTEXT OVERVIEW'], bold: true }),
-          Text({ children: [`${formatTokenCount(totalSubagentTokens)} tracked subagent tokens · ${options.sessionAgents.length} agents`] }),
-          Button({
-            key: 'dashboard-stats-refresh',
-            label: '↻ Refresh context snapshot',
-            plain: true,
-            onPress: options.onRefreshContext,
-          }),
-          options.loadout
-            ? Text({
-                key: 'dashboard-loadout',
-                children: [`${meter(options.loadout.percentage, 16)} ${Math.round(options.loadout.percentage)}% · ${formatTokensShort(options.loadout.idleTokens)} tokens unused`],
-                color: '#D97757',
-              })
-            : null,
-          options.contextSnapshots.length > 0
-            ? Text({ children: [options.contextSnapshots.at(-1)!.text], dimColor: true })
-            : Text({ children: ['Refresh to capture current /context usage.'], dimColor: true }),
-          Button({
-            key: 'dashboard-open-context',
-            label: '→ Open context loadout',
-            plain: true,
-            onPress: options.onOpenContext,
-          }),
-          options.dashboardError ? Text({ children: [options.dashboardError], color: '#F87171' }) : null,
-        ],
-      }),
+      card('overview-context', 'CONTEXT', 'context', '2', contextLines, loadout && loadout.idleTokens > 0 ? WARN : BORDER),
+      card('overview-access', 'ACCESS', 'access', '3', accessLines, risky.length > 0 || access?.defaultMode === 'bypassPermissions' ? WARN : BORDER),
+      card('overview-agents-card', 'AGENTS', 'agents', '4', agentLines),
+      options.error ? Text({ key: 'overview-error', children: [options.error], color: ERROR }) : null,
+      keyHints(ui, '1-4 switch views · r refresh · Esc close · /cognita help for commands'),
     ],
   })
 }
