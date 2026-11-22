@@ -49,6 +49,8 @@ type Session = {
   compactFails?: boolean
   /** No model reply yet: usage has no token count until asked for a breakdown. */
   noCountYet?: boolean
+  /** The text a compaction's summary holds. */
+  summary?: string
   requested?: unknown[]
 }
 
@@ -105,7 +107,7 @@ function mockSession(on: any, session: Session) {
   on('session.compact', (_$: any, event: any) => {
     if (session.compactFails) throw new Error('A turn is running.')
     session.compacted?.push(event.instructions)
-    return { messages: [{ role: 'user', text: 'Summary of the conversation so far.', toolUses: [] }] }
+    return { messages: [{ role: 'user', text: session.summary ?? 'Summary of the conversation so far.', toolUses: [] }] }
   })
   on('turn.complete', () => ({ text: '' }))
 }
@@ -272,4 +274,54 @@ test('before the first reply, the window comes from the breakdown of what is loa
 
   expect(session.requested).toEqual([undefined, 'summary'])
   expect(text).toContain('window 17% (34,000 of 200,000 tokens)')
+})
+
+const TAGGED_PROMPT = 'Build it. <constraint>Do not touch main</constraint> <decision>Use SQLite for the cache</decision> '
+  + `<open>${Array.from({ length: 120 }, () => 'detail').join(' ')}</open>`
+const tagged = [{ role: 'user', text: TAGGED_PROMPT, toolUses: [] }]
+
+test('/cognita pressure lists tagged items with their share of attention', async ($, on) => {
+  await start($, on, { percent: 40, messages: tagged })
+  const text = await run($, 'pressure')
+
+  expect(text).toContain('### Tagged items (estimate)')
+  expect(text).toContain('| c1 | constraint | 4 |')
+  expect(text).toContain('| d1 | decision | 5 |')
+  expect(text).toContain('⚠ c1 (constraint) gets')
+})
+
+test('any compaction is asked to keep the tagged items, and a lost one is reported', async ($, on) => {
+  const session: Session = { percent: 80, messages: tagged, compacted: [], toasts: [], summary: '- [d1] decision: Use SQLite for the cache\n- [o1] open: details' }
+  await start($, on, session)
+  await run($, 'pressure')
+  // The person's own /compact, with their own instructions.
+  await $.session.compact({ trigger: 'manual', instructions: 'Focus on the cache', messages: tagged } as any)
+
+  expect(session.compacted?.[0]).toContain('Focus on the cache')
+  expect(session.compacted?.[0]).toContain('Tagged items to keep:')
+  expect(session.compacted?.[0]).toContain('[c1] constraint: Do not touch main')
+  expect(session.toasts?.[0]).toContain('Compaction kept 1 of 3 tagged items. Lost: c1 (constraint) "Do not touch main"')
+
+  const text = await run($, 'pressure')
+  expect(text).toContain('**Retention at the last compaction:** kept 1 of 3')
+})
+
+test('/cognita compact adds the tagged items to its focus only once', async ($, on) => {
+  const session: Session = { percent: 80, messages: tagged, compacted: [], toasts: [], summary: '[c1] Do not touch main [d1] Use SQLite for the cache [o1] detail' }
+  const clock = await start($, on, session)
+  await run($, 'compact')
+  await clock.advance(200)
+
+  expect(session.compacted?.length).toBe(1)
+  expect(session.compacted?.[0].split('Tagged items to keep:').length).toBe(2)
+  expect(session.toasts).toEqual(['Compacted, keeping the goal and the open plan.'])
+})
+
+test('the Overview card shows tagged items crowded out', async ($, on) => {
+  await start($, on, { percent: 80, messages: tagged })
+  await $.command.run({ command: 'cognita', args: '' })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  const ui = await $.ui.mount({ ...pane, surface: 'terminal' })
+
+  expect(await ui.find({ text: 'Tagged: 3 items · ⚠ crowded out: c1' })).toBeDefined()
 })

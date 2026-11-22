@@ -209,6 +209,25 @@ Splitting comes first when attention adds more than the window; saving always co
    > Delegate these plan items to subagents, one subagent each, if they do not depend on each other: 1) ...
 ```
 
+**Tag what must survive.** Wrap parts of a prompt in one of four tags, with an optional `id`:
+
+| Tag | For | Weight |
+| --- | --- | --- |
+| `<important>` | What must not get lost | 1 |
+| `<constraint>` | Rules that stay in force ("do not touch main") | 1 |
+| `<decision>` | Something settled, and why | 0.75 |
+| `<open>` | What is still pending | 0.5 |
+
+```
+Refactor the cache. <constraint>Do not touch main</constraint> <decision id="db">Use SQLite: it ships with the runtime</decision>
+```
+
+Items without an `id` get one by kind (`c1`, `d1`, `i1`, `o1`). Cognita then:
+
+- **Estimates the attention each one gets**: its share of the window, and its share of the attention on tagged items, `weight × tokens` over the sum. A short constraint next to a long open item gets little, and the report flags an `important` or `constraint` item that gets under half an even share as *crowded out*. This is an estimate: it assumes attention follows size, scaled by importance.
+- **Asks every compaction to keep them by id**, yours (`/compact …`), the automatic one and `/cognita compact` alike: the summarizer gets one line per item, `[c1] constraint: Do not touch main`.
+- **Checks retention afterwards.** An item whose id is in the new summary is *kept* when most of its words are on that line and *rewritten* otherwise; with no id it is kept only when nearly all its words are there, else *lost*. A toast names what was lost or rewritten, and `/cognita pressure` and the Overview show the last result. Shared words show how much the text changed, not whether its meaning did.
+
 **Automatic help.** After each turn Cognita measures the pressure again. When the level rises (ok to watch, watch to act) a toast names the cause and the one step to take, and that command appears as the prompt box's suggestion (Tab takes it). It warns once per rise, not every turn.
 
 ## Supply chain
@@ -325,5 +344,6 @@ npm run validate   # claude plugin validate .
 - **The pane doesn't open.** Run `claude plugin validate <plugin folder>`, then `/reload-plugins`. Start `claude --debug` to see any hook errors. `/cognita report` and `/cognita access` work without the pane.
 - **Two plugins answer `/inspector`.** An earlier version is installed as `workspace-dashboard`. `npm run install:local` removes it, or delete `~/.claude/skills/workspace-dashboard`.
 - **`/cognita compact` did not start.** Claude Code compacts only between turns. The command prints the `/compact …` line: run that instead.
+- **A tagged item shows as lost but the summary has it.** The check looks for its id, then for nearly all its words. If the summary paraphrased it without the id, it counts as lost: say so in the next prompt, or tag it again.
 - **Pressure shows no plan in `claude -p`.** Headless sessions have no todo or task tool, so only the window and your prompts count there.
 - **Git Bash on Windows.** `claude -p "/cognita access"` can turn `/cognita` into a Windows path. Run it from PowerShell or set `MSYS_NO_PATHCONV=1`.

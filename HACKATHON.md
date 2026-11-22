@@ -146,7 +146,8 @@ Registrarlo en la sección siguiente para la entrega.
   - Ayuda automática: después de cada turno se vuelve a medir; si el nivel sube, un toast dice la causa y el paso a dar, y ese comando queda sugerido en el prompt (Tab). Tarjeta PRESSURE en el Overview (`c` compacta) y la presión en la status line.
   - El plan se sigue desde `TodoWrite`, `TaskCreate`/`TaskUpdate` y la herramienta de plan de la app de escritorio, y sobrevive a una compactación.
   - Hallazgos reales: el motor no deja compactar ni enviar un prompt desde el hook de un comando, así que los comandos responden enseguida y actúan en un despacho propio (`$.clock.after`). Antes de la primera respuesta no hay conteo de tokens y la presión daba 0%; ahora usa el desglose de lo cargado. Probado con `claude -p "/cognita pressure" --plugin-dir ./claude-code-tui` en una sesión real reanudada: 81,392 de 1,000,000 tokens, 45 palabras de prompt.
-  - Tests: 40 de UI y 60 unitarios, todos en verde; `claude plugin validate` en verde.
+  - Etiquetas en los prompts: `<important>`, `<constraint>`, `<decision>` y `<open>`, con `id` opcional (si falta, Cognita asigna `c1`, `d1`…). Para cada una estima cuánta atención recibe según su tamaño y su importancia (pesos 1, 1, 0.75 y 0.5) y avisa cuando una importante queda tapada por ítems largos. Cada compactación, también la automática y el `/compact` del usuario, recibe la lista con los ids; después Cognita revisa el resumen nuevo y avisa qué se perdió o se reescribió (por id y palabras compartidas, una estimación).
+  - Tests: 44 de UI y 71 unitarios, todos en verde; `claude plugin validate` en verde.
 
 ## Cómo usamos AI coding
 

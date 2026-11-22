@@ -1,6 +1,7 @@
 import { riskyAllowed, type AccessReport } from './access.js'
 import { baseTokensOf, meter, type Loadout } from './loadout.js'
 import type { Pressure, Recommendation } from './pressure.js'
+import type { Retention, TaggedFocus } from './tags.js'
 import { renderPressureCard } from './pressure-view.js'
 import { ACCENT, BORDER, ERROR, OK, WARN, keyHints } from './theme.js'
 import { formatTokensShort, isActiveAgent, type DashboardTab } from './utils.js'
@@ -105,6 +106,8 @@ export function renderOverview(ui: UiComponents, options: {
   sessionAgents: AgentInfo[]
   pressure?: Pressure
   recommendations?: readonly Recommendation[]
+  tagged?: TaggedFocus
+  retention?: Retention
   compacting?: boolean
   onCompact?: () => void
   loading: boolean
@@ -225,6 +228,8 @@ export function renderOverview(ui: UiComponents, options: {
         ? renderPressureCard(ui, {
             pressure: options.pressure,
             recommendations: options.recommendations ?? [],
+            tagged: options.tagged,
+            retention: options.retention,
             loading: options.loading,
             compacting: options.compacting ?? false,
             onCompact: options.onCompact,

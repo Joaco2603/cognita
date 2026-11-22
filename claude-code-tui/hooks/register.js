@@ -10,6 +10,7 @@ import { renderOverview, renderSidebar, renderTabStrip } from './dashboard-view.
 import { createLazyMcp } from './lazy-mcp.js';
 import { DEFAULT_GROWTH_ALERT, diffLoadout, emptyUsage, formatHistory, formatJson, formatTrimPlan, formatReport, mcpServerOf, measurePrompt, recordSkillUse, recordToolCall, parseTokens, rememberSnapshot, sinceBadge, startupAlert, summarize, toSnapshot, trendOf, } from './loadout.js';
 import { DEFAULT_PRESSURE, applyPlanCall, compactFocus, engramPrompt, engramSaveTool, formatPressure, formatPressureJson, isPlanTool, parsePressureSettings, planFromMessages, pressureAlert, pressureBadge, pressureOf, promptsOf, recommend, splitPrompt, } from './pressure.js';
+import { extractTagged, focusOf, formatRetention, formatTagged, mergeTagged, retentionAlert, retentionOf, withTaggedInstructions, } from './tags.js';
 import { basename, } from './utils.js';
 const PANE_ID = 'cognita';
 const COMMAND_NAME = 'cognita';
@@ -80,6 +81,7 @@ function createState() {
         pressureLevel: 'ok',
         checkingPressure: false,
         compacting: false,
+        tagged: [],
     };
 }
 function promptCapture(state) {
@@ -239,7 +241,9 @@ async function readConversation($, state) {
             state.hasPlan = true;
         }
     }
-    return { plan: state.plan, prompts: promptsOf(messages), engramTool: engramSaveTool(tools.map((tool) => tool.name)) };
+    const prompts = promptsOf(messages);
+    state.tagged = mergeTagged(state.tagged, extractTagged(prompts));
+    return { plan: state.plan, prompts, engramTool: engramSaveTool(tools.map((tool) => tool.name)) };
 }
 /** Reads the pressure and keeps it for the pane and the status line. */
 async function refreshPressure($, state, window) {
@@ -344,7 +348,7 @@ function afterCommand($, fn) {
     }
 }
 async function compactCommand($, state) {
-    const focus = compactFocus(await readConversation($, state));
+    const focus = withTaggedInstructions(compactFocus(await readConversation($, state)), state.tagged) ?? '';
     const fallback = `\`\`\`\n/compact ${focus}\n\`\`\``;
     if (!afterCommand($, () => compactNow($, state, focus))) {
         return { text: `Run this to compact, keeping the goal and the plan:\n\n${fallback}`, isTextDisplayOnly: true };
@@ -359,7 +363,8 @@ function sendCommand($, prompt) {
 }
 async function compactFromPane($, state) {
     try {
-        await compactNow($, state, compactFocus(await readConversation($, state)));
+        const focus = compactFocus(await readConversation($, state));
+        await compactNow($, state, withTaggedInstructions(focus, state.tagged) ?? focus);
     }
     catch {
         // compactNow reports its own failures; reading the conversation never throws.
@@ -508,7 +513,8 @@ async function runCommand($, state, event) {
             const { pressure, recommendations } = await refreshPressure($, state);
             if (options.has('json'))
                 return { text: '```json\n' + formatPressureJson(pressure, recommendations, state.pressureSettings) + '\n```' };
-            return { text: formatPressure(pressure, recommendations, state.pressureSettings) };
+            const tagged = [...formatTagged(focusOf(state.tagged, pressure.windowTokens)), ...formatRetention(state.retention)];
+            return { text: formatPressure(pressure, recommendations, state.pressureSettings, tagged) };
         }
         catch {
             return { text: 'Could not measure the context pressure for this session.' };
@@ -579,6 +585,8 @@ function renderPane($, state, event) {
             sessionAgents: state.sessionAgents,
             pressure: state.pressure,
             recommendations: state.recommendations,
+            tagged: focusOf(state.tagged, state.pressure?.windowTokens),
+            retention: state.retention,
             compacting: state.compacting,
             onCompact: () => void compactFromPane($, state),
             loading: state.measuring || state.checkingAccess,
@@ -752,6 +760,9 @@ export function register(on) {
             return next?.(event);
         return trackPlan(state, event, next);
     });
+    // Every compaction, the person's or the engine's, is asked to keep the
+    // tagged items by id; afterwards the summary is checked for each one.
+    on('session.compact', (_$, event, next) => keepTagged(_$, state, event, next));
     // After each main-loop turn, check the pressure and warn when it rises.
     on('turn.complete', async ($, event, next) => {
         const result = await next?.(event);
@@ -842,6 +853,38 @@ async function trackPlan(state, event, next) {
     }
     catch {
         // Tracking is best effort.
+    }
+    return result;
+}
+async function keepTagged($, state, event, next) {
+    let items = [];
+    let forwarded = event;
+    try {
+        if (event.agentId === undefined) {
+            const messages = Array.isArray(event.messages) ? event.messages : [];
+            items = state.tagged = mergeTagged(state.tagged, extractTagged(promptsOf(messages)));
+            const instructions = withTaggedInstructions(typeof event.instructions === 'string' ? event.instructions : undefined, items);
+            if (instructions !== event.instructions)
+                forwarded = { ...event, instructions };
+        }
+    }
+    catch {
+        items = [];
+        forwarded = event;
+    }
+    const result = await next?.(forwarded);
+    try {
+        const kept = result?.messages;
+        if (items.length > 0 && Array.isArray(kept) && event.trigger !== 'precompute') {
+            state.retention = retentionOf(items, kept.map((message) => message.text ?? '').join('\n'));
+            const alert = retentionAlert(state.retention);
+            if (alert)
+                void $.ui.toast(alert);
+            $.ui.invalidate('ui.render');
+        }
+    }
+    catch {
+        // The retention check is best effort; the compaction already happened.
     }
     return result;
 }

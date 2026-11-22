@@ -413,7 +413,7 @@ const tokens = (count: number) => Math.round(count).toLocaleString('en-US')
 const points = (value: number) => (Number.isInteger(value) ? String(value) : value.toFixed(1))
 
 /** Markdown for `/cognita pressure`. */
-export function formatPressure(pressure: Pressure, recommendations: readonly Recommendation[], settings: PressureSettings): string {
+export function formatPressure(pressure: Pressure, recommendations: readonly Recommendation[], settings: PressureSettings, extra: readonly string[] = []): string {
   const windowDetail = pressure.windowTokens !== undefined && pressure.windowMax
     ? ` (${tokens(pressure.windowTokens)} of ${tokens(pressure.windowMax)} tokens)`
     : ''
@@ -445,6 +445,7 @@ export function formatPressure(pressure: Pressure, recommendations: readonly Rec
       lines.push(`   Run \`${step.command}\`, which sends:`, `   > ${step.text}`, '')
     }
   })
+  if (extra.length > 0) lines.push('', ...extra)
   lines.push('', '_The window is measured by Claude Code. Attention is an estimate from the plan, your prompts and the turn count, not a measurement of the model._')
   return lines.join('\n')
 }

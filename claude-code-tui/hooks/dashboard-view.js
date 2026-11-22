@@ -190,6 +190,8 @@ export function renderOverview(ui, options) {
                 ? renderPressureCard(ui, {
                     pressure: options.pressure,
                     recommendations: options.recommendations ?? [],
+                    tagged: options.tagged,
+                    retention: options.retention,
                     loading: options.loading,
                     compacting: options.compacting ?? false,
                     onCompact: options.onCompact,

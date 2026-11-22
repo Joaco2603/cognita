@@ -69,6 +69,18 @@ import {
   type Recommendation,
 } from './pressure.js'
 import {
+  extractTagged,
+  focusOf,
+  formatRetention,
+  formatTagged,
+  mergeTagged,
+  retentionAlert,
+  retentionOf,
+  withTaggedInstructions,
+  type Retention,
+  type TaggedItem,
+} from './tags.js'
+import {
   basename,
   type AccessSubview,
   type AgentSubview,
@@ -169,6 +181,10 @@ type State = {
   pressureLevel: PressureLevel
   checkingPressure: boolean
   compacting: boolean
+  /** What the person tagged (important, decision, open, constraint), kept across compactions. */
+  tagged: TaggedItem[]
+  /** Which tagged items the last compaction kept. */
+  retention?: Retention
 }
 
 function createState(): State {
@@ -213,6 +229,7 @@ function createState(): State {
     pressureLevel: 'ok',
     checkingPressure: false,
     compacting: false,
+    tagged: [],
   }
 }
 
@@ -368,7 +385,9 @@ async function readConversation($: ModApi, state: State): Promise<Omit<PressureI
       state.hasPlan = true
     }
   }
-  return { plan: state.plan, prompts: promptsOf(messages), engramTool: engramSaveTool(tools.map((tool) => tool.name)) }
+  const prompts = promptsOf(messages)
+  state.tagged = mergeTagged(state.tagged, extractTagged(prompts))
+  return { plan: state.plan, prompts, engramTool: engramSaveTool(tools.map((tool) => tool.name)) }
 }
 
 /** Reads the pressure and keeps it for the pane and the status line. */
@@ -468,7 +487,7 @@ function afterCommand($: ModApi, fn: () => Promise<void>): boolean {
 }
 
 async function compactCommand($: ModApi, state: State): Promise<CommandAnswer> {
-  const focus = compactFocus(await readConversation($, state))
+  const focus = withTaggedInstructions(compactFocus(await readConversation($, state)), state.tagged) ?? ''
   const fallback = `\`\`\`\n/compact ${focus}\n\`\`\``
   if (!afterCommand($, () => compactNow($, state, focus))) {
     return { text: `Run this to compact, keeping the goal and the plan:\n\n${fallback}`, isTextDisplayOnly: true }
@@ -485,7 +504,8 @@ function sendCommand($: ModApi, prompt: string): CommandAnswer {
 
 async function compactFromPane($: ModApi, state: State): Promise<void> {
   try {
-    await compactNow($, state, compactFocus(await readConversation($, state)))
+    const focus = compactFocus(await readConversation($, state))
+    await compactNow($, state, withTaggedInstructions(focus, state.tagged) ?? focus)
   } catch {
     // compactNow reports its own failures; reading the conversation never throws.
   }
@@ -628,7 +648,8 @@ async function runCommand($: ModApi, state: State, event: ModEvent): Promise<Com
     try {
       const { pressure, recommendations } = await refreshPressure($, state)
       if (options.has('json')) return { text: '```json\n' + formatPressureJson(pressure, recommendations, state.pressureSettings) + '\n```' }
-      return { text: formatPressure(pressure, recommendations, state.pressureSettings) }
+      const tagged = [...formatTagged(focusOf(state.tagged, pressure.windowTokens)), ...formatRetention(state.retention)]
+      return { text: formatPressure(pressure, recommendations, state.pressureSettings, tagged) }
     } catch {
       return { text: 'Could not measure the context pressure for this session.' }
     }
@@ -702,6 +723,8 @@ function renderPane($: ModApi, state: State, event: ModEvent): unknown {
       sessionAgents: state.sessionAgents,
       pressure: state.pressure,
       recommendations: state.recommendations,
+      tagged: focusOf(state.tagged, state.pressure?.windowTokens),
+      retention: state.retention,
       compacting: state.compacting,
       onCompact: () => void compactFromPane($, state),
       loading: state.measuring || state.checkingAccess,
@@ -876,6 +899,10 @@ export function register(on: ModOn): void {
     return trackPlan(state, event, next)
   })
 
+  // Every compaction, the person's or the engine's, is asked to keep the
+  // tagged items by id; afterwards the summary is checked for each one.
+  on('session.compact', (_$, event, next) => keepTagged(_$, state, event, next))
+
   // After each main-loop turn, check the pressure and warn when it rises.
   on('turn.complete', async ($, event, next) => {
     const result = await next?.(event)
@@ -963,6 +990,35 @@ async function trackPlan(state: State, event: ModEvent, next?: ModNext): Promise
     }
   } catch {
     // Tracking is best effort.
+  }
+  return result
+}
+
+async function keepTagged($: ModApi, state: State, event: ModEvent, next?: ModNext): Promise<unknown> {
+  let items: TaggedItem[] = []
+  let forwarded = event
+  try {
+    if (event.agentId === undefined) {
+      const messages = Array.isArray(event.messages) ? event.messages as SessionMessageSummary[] : []
+      items = state.tagged = mergeTagged(state.tagged, extractTagged(promptsOf(messages)))
+      const instructions = withTaggedInstructions(typeof event.instructions === 'string' ? event.instructions : undefined, items)
+      if (instructions !== event.instructions) forwarded = { ...event, instructions }
+    }
+  } catch {
+    items = []
+    forwarded = event
+  }
+  const result = await next?.(forwarded)
+  try {
+    const kept = (result as { messages?: SessionMessageSummary[] } | undefined)?.messages
+    if (items.length > 0 && Array.isArray(kept) && event.trigger !== 'precompute') {
+      state.retention = retentionOf(items, kept.map((message) => message.text ?? '').join('\n'))
+      const alert = retentionAlert(state.retention)
+      if (alert) void $.ui.toast(alert)
+      $.ui.invalidate('ui.render')
+    }
+  } catch {
+    // The retention check is best effort; the compaction already happened.
   }
   return result
 }

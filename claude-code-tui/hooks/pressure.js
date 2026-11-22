@@ -307,7 +307,7 @@ export function pressureBadge(pressure) {
 const tokens = (count) => Math.round(count).toLocaleString('en-US');
 const points = (value) => (Number.isInteger(value) ? String(value) : value.toFixed(1));
 /** Markdown for `/cognita pressure`. */
-export function formatPressure(pressure, recommendations, settings) {
+export function formatPressure(pressure, recommendations, settings, extra = []) {
     const windowDetail = pressure.windowTokens !== undefined && pressure.windowMax
         ? ` (${tokens(pressure.windowTokens)} of ${tokens(pressure.windowMax)} tokens)`
         : '';
@@ -340,6 +340,8 @@ export function formatPressure(pressure, recommendations, settings) {
             lines.push(`   Run \`${step.command}\`, which sends:`, `   > ${step.text}`, '');
         }
     });
+    if (extra.length > 0)
+        lines.push('', ...extra);
     lines.push('', '_The window is measured by Claude Code. Attention is an estimate from the plan, your prompts and the turn count, not a measurement of the model._');
     return lines.join('\n');
 }

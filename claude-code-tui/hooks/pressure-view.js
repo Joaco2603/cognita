@@ -27,6 +27,22 @@ export function renderPressureCard(ui, options) {
                     wrap: 'wrap',
                 })
                 : Text({ key: 'pressure-next', children: ['✓ Nothing to do yet'], color: OK }),
+            options.tagged && options.tagged.items.length > 0
+                ? Text({
+                    key: 'pressure-tagged',
+                    children: [`Tagged: ${count(options.tagged.items.length, 'item')}${options.tagged.crowded.length > 0 ? ` · ⚠ crowded out: ${options.tagged.crowded.map((item) => item.id).join(', ')}` : ''}`],
+                    color: options.tagged.crowded.length > 0 ? WARN : undefined,
+                    dimColor: options.tagged.crowded.length === 0,
+                    wrap: 'wrap',
+                })
+                : null,
+            options.retention && options.retention.items.length > 0
+                ? Text({
+                    key: 'pressure-retention',
+                    children: [`Last compaction kept ${options.retention.kept} of ${options.retention.items.length} tagged items`],
+                    color: options.retention.kept === options.retention.items.length ? OK : WARN,
+                })
+                : null,
         ]
         : [Text({ key: 'pressure-pending', children: [options.loading ? 'Measuring…' : 'Not measured yet. Press r.'], dimColor: true })];
     return Box({
