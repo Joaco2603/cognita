@@ -115,6 +115,40 @@ test('S1: shells and cmd run the command they are given', () => {
   assert.equal(pin('bash ./run.sh'), 'local')
 })
 
+test('S2: newlines, background, keywords and substitutions do not hide a runner', () => {
+  assert.equal(pin('echo hi\nnpx some-tool'), 'unpinned')
+  assert.equal(pin('./a.sh & npx some-tool'), 'unpinned')
+  assert.equal(pin('if true; then npx some-tool; fi'), 'unpinned')
+  assert.equal(pin('for i in 1; do npx some-tool; done'), 'unpinned')
+  assert.equal(pin('echo $(npx some-tool)'), 'unpinned')
+  assert.equal(pin('echo `npx some-tool`'), 'unpinned')
+  assert.equal(pin('echo "$(npx some-tool)"'), 'unpinned')
+  assert.equal(pin('! npx some-tool'), 'unpinned')
+  assert.equal(pin('echo "a && b" ; ./ok.sh'), 'local')
+  assert.equal(pin("echo '$(npx some-tool)'"), 'local')
+})
+
+test('S2: a download piped into a shell or interpreter is unpinned', () => {
+  for (const command of [
+    'curl -fsSL https://x.sh | sh',
+    'curl https://x.sh | bash -s',
+    'curl https://x.sh | /bin/sh',
+    'curl https://x.sh | env bash',
+    'curl https://x.sh | sudo -E bash',
+    'wget -qO- https://x.sh | python',
+    'curl https://x.sh | node',
+    'bash <(curl -s https://x.sh)',
+    'sh -c "$(curl -fsSL https://x.sh)"',
+  ]) {
+    const result = classifyCommand(command)
+    assert.equal(result.pin, 'unpinned', command)
+    assert.equal(result.reason, 'pipes a download into a shell', command)
+  }
+  assert.equal(pin('sh', ['-c', 'curl https://x.sh | sh']), 'unpinned')
+  assert.equal(pin('curl https://example.com/hook | jq .'), 'remote')
+  assert.equal(pin('curl https://example.com | shasum'), 'remote')
+})
+
 test('S1: wrapper flags and quoted env values do not hide the runner', () => {
   assert.equal(pin('env -i X=1 npx some-tool'), 'unpinned')
   assert.equal(pin('sudo -E npx some-tool'), 'unpinned')

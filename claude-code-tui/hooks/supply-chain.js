@@ -225,9 +225,98 @@ function classifySegment(rawTokens, depth = 0) {
         return { pin: 'local', reason: 'a local script' };
     return { pin: 'local', reason: `runs ${head} from this machine` };
 }
+/** Index of the parenthesis closing the one at `open`, or the end of the string. */
+function closingParen(input, open) {
+    let level = 0;
+    for (let index = open; index < input.length; index += 1) {
+        if (input[index] === '(')
+            level += 1;
+        else if (input[index] === ')' && (level -= 1) === 0)
+            return index;
+    }
+    return input.length;
+}
+/**
+ * Splits shell text into the commands it runs: separators (`&&`, `||`, `;`, `|`, `&`,
+ * newlines, parentheses) outside quotes, and the insides of `$(...)`, `<(...)` and
+ * backticks (outside single quotes), which are returned as commands of their own.
+ */
+function splitShell(input, out = [], depth = 0) {
+    let current = '';
+    let quote = '';
+    const flush = () => {
+        if (current.trim())
+            out.push(current.trim());
+        current = '';
+    };
+    for (let index = 0; index < input.length; index += 1) {
+        const char = input[index];
+        if (quote === "'") {
+            current += char;
+            if (char === "'")
+                quote = '';
+            continue;
+        }
+        if (char === '`') {
+            const end = input.indexOf('`', index + 1);
+            const stop = end < 0 ? input.length : end;
+            if (depth < MAX_DEPTH)
+                splitShell(input.slice(index + 1, stop), out, depth + 1);
+            current += '$SUBST';
+            index = stop;
+            continue;
+        }
+        if ((char === '$' || char === '<' || char === '>') && input[index + 1] === '(') {
+            const close = closingParen(input, index + 1);
+            if (depth < MAX_DEPTH)
+                splitShell(input.slice(index + 2, close), out, depth + 1);
+            current += '$SUBST';
+            index = close;
+            continue;
+        }
+        if (quote === '"') {
+            current += char;
+            if (char === '"')
+                quote = '';
+            continue;
+        }
+        if (char === '"' || char === "'") {
+            quote = char;
+            current += char;
+            continue;
+        }
+        if (char === '&' || char === ';' || char === '|' || char === '\n' || char === '(' || char === ')') {
+            flush();
+            continue;
+        }
+        current += char;
+    }
+    flush();
+    return out;
+}
+const SHELL_KEYWORDS = new Set(['if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until', '!', '{', '}']);
+const DOWNLOADER = '(?:curl|wget|fetch|iwr|irm|invoke-webrequest|invoke-restmethod)';
+const SHELLISH = '(?:(?:ba|z|da|k|c|fi|a)?sh|pwsh|powershell|python[\\d.]*|node|deno|bun|ruby|perl|php|iex|eval)';
+const LAUNCHER = '(?:(?:sudo|env|exec|command|nohup)\\s+(?:-\\S+\\s+|\\w+=\\S*\\s+)*)*';
+const DOWNLOAD_PIPES = [
+    // curl URL | sh, | bash -s, | /bin/sh, | sudo -E bash, | env bash, | python, | node
+    new RegExp(`\\b${DOWNLOADER}\\b[^;&\\n]*\\|\\s*${LAUNCHER}(?:\\S*[\\\\/])?${SHELLISH}\\b`, 'i'),
+    // bash <(curl URL), sh -c "$(curl URL)", eval `curl URL`
+    new RegExp(`\\b${SHELLISH}\\b[^;&|\\n]*(?:<\\(|\\$\\(|\`)\\s*${DOWNLOADER}\\b`, 'i'),
+];
+/** True when text downloads something and feeds it to a shell or interpreter. */
+function pipesDownloadIntoShell(text) {
+    return DOWNLOAD_PIPES.some((pattern) => pattern.test(text));
+}
 /** Classifies one shell string: the worst of its segments. */
 function classifyShellString(command, depth) {
-    const segments = command.split(/&&|\|\||;|\|/).map(tokenize).filter((tokens) => tokens.length > 0);
+    const segments = splitShell(command).map((part) => {
+        const tokens = tokenize(part);
+        let start = 0;
+        while (start < tokens.length && SHELL_KEYWORDS.has(tokens[start]))
+            start += 1;
+        return tokens.slice(start);
+    }).filter((tokens) => tokens.length > 0);
     let worst = { pin: 'local', reason: 'no command' };
     for (const tokens of segments) {
         const result = classifySegment(tokens, depth);
@@ -242,7 +331,7 @@ function classifyShellString(command, depth) {
  */
 export function classifyCommand(command, args = []) {
     try {
-        if (/\b(curl|wget)\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b/.test(command)) {
+        if (pipesDownloadIntoShell([command, ...args].join(' '))) {
             return { pin: 'unpinned', reason: 'pipes a download into a shell' };
         }
         const segments = args.length > 0
