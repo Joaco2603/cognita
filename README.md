@@ -10,9 +10,12 @@ Every Claude Code session starts with things you didn't choose on purpose: CLAUD
 - **What your agent can do.** Which tools it can call, which risky actions (git push, `rm -rf`, reading `.env` or SSH keys, writing outside the project) run **without asking you**, and the rules, hooks and plugins behind that.
 - **What it is doing.** The subagents running in the session and their token use.
 
+```bash
+claude plugin marketplace add Joaco2603/cognita
+claude plugin install cognita@cognita
 ```
-/plugin install cognita --marketplace Joaco2603/cognita
-```
+
+Or, inside a session: `/plugin marketplace add Joaco2603/cognita`, then `/plugin install cognita@cognita`.
 
 Then run `/cognita` in a new session.
 
@@ -23,6 +26,8 @@ Then run `/cognita` in a new session.
 - **Plugin and MCP authors**, who want to see what their plugin costs in context and which sections it injects into the system prompt.
 
 ## What it looks like
+
+**Demo video (77 s):** [`demo/cognita-demo.mp4`](./demo/cognita-demo.mp4). It shows the Overview, `/cognita access` catching `.env` reads, the one-line fix, and `/cognita trim`.
 
 Real output of `/cognita access`, trimmed and with the home path shortened:
 
@@ -76,6 +81,7 @@ Start a new Claude Code session and run `/cognita`. Requires Claude Code 2.1.275
 | [`claude-code-tui/`](./claude-code-tui) | The Cognita plugin: TypeScript sources, compiled hooks, tests |
 | [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) | The marketplace entry for one-step install |
 | [`HACKATHON.md`](./HACKATHON.md) | Dojo AI Hackathon context: criteria, baseline, progress log, checklist |
+| [`demo/`](./demo) | The demo video and its HyperFrames source |
 | [`skills/`](./skills) | Local skills used while building |
 | [`graphify-out/`](./graphify-out) | A generated graph of the code |
 
