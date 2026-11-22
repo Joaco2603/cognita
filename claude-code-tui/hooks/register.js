@@ -1,4 +1,5 @@
 import { analyzeAccess, formatAccess, formatAccessJson, PROBES, SETTINGS_SOURCES } from './access.js';
+import { customProbes, mergeAlerts, parsePolicy, POLICY_FILE } from './policy.js';
 import { renderAccess } from './access-view.js';
 import { renderAgents } from './agents-view.js';
 import { renderContext } from './context-view.js';
@@ -44,6 +45,8 @@ function createState() {
         launchingAgent: false,
         isStatusLineEnabled: true,
         alerts: { growth: DEFAULT_GROWTH_ALERT },
+        policy: { require: {}, actions: [] },
+        policyWarnings: [],
         usageLog: emptyUsage(),
         loadoutDetail: 'summary',
         measuredAt: '',
@@ -104,7 +107,7 @@ async function refreshAccess($, state) {
     state.accessError = '';
     $.ui.invalidate('ui.render');
     try {
-        applyAccess(state, await readAccess($, state.currentDirectory));
+        applyAccess(state, await readAccess($, state.currentDirectory, state));
     }
     catch {
         state.accessError = 'Could not read the tools and permissions of this session.';
@@ -220,7 +223,7 @@ async function runCommand($, state, event) {
         return { text: HELP };
     if (subcommand === 'access' && !options.has('open')) {
         try {
-            const report = applyAccess(state, await readAccess($, state.currentDirectory));
+            const report = applyAccess(state, await readAccess($, state.currentDirectory, state));
             if (options.has('json'))
                 return { text: '```json\n' + formatAccessJson(report) + '\n```' };
             return { text: formatAccess(report) };
@@ -438,7 +441,10 @@ export function register(on) {
         state.currentDirectory = event.cwd ?? '';
         state.lazy.setCwd(state.currentDirectory);
         state.isStatusLineEnabled = (await $.env.get('CLAUDE_INSPECTOR_STATUSLINE'))?.trim() !== '0';
-        state.alerts = await readAlertSettings($);
+        const loaded = await readPolicy($);
+        state.policy = loaded.policy;
+        state.policyWarnings = loaded.warnings;
+        state.alerts = mergeAlerts(state.policy, await readAlertSettings($));
         const isStartupCheckEnabled = (await $.env.get('CLAUDE_INSPECTOR_STARTUP_CHECK'))?.trim() !== '0';
         const result = await next?.(event);
         if (isStartupCheckEnabled && event.isInteractive !== false && !state.loadout && !state.measuring) {
@@ -538,12 +544,12 @@ async function readLoadout($, detail, usageLog, cwd, lazy) {
  * for a set of sample actions (asked, never run), settings, plugins and commands.
  * Every part is best effort, so one failing API leaves the rest of the report.
  */
-async function readAccess($, cwd) {
+async function readAccess($, cwd, state) {
     const tools = await $.tool.list();
     const names = new Set(tools.map((tool) => tool.name));
     const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE')) || '~';
     const paths = { cwd: cwd || '.', home };
-    const probes = await Promise.all(PROBES.map(async (probe) => {
+    const probes = await Promise.all([...PROBES, ...customProbes(state.policy)].map(async (probe) => {
         const base = { key: probe.key, label: probe.label, tool: probe.tool, isRisky: probe.isRisky };
         if (!names.has(probe.tool))
             return { ...base, verdict: 'missing' };
@@ -555,6 +561,7 @@ async function readAccess($, cwd) {
             return { ...base, verdict: 'unknown' };
         }
     }));
+    const mcpProbes = await probeMcpTools($, tools.filter((tool) => tool.mcp).map((tool) => tool.name));
     const settings = {};
     await Promise.all(SETTINGS_SOURCES.map(async (source) => {
         try {
@@ -569,7 +576,42 @@ async function readAccess($, cwd) {
         $.session.model().catch(() => undefined),
         $.session.version().then((value) => value.version).catch(() => undefined),
     ]);
-    return analyzeAccess({ model, version, tools, probes, settings, commands });
+    return analyzeAccess({ model, version, tools, probes, settings, commands, mcpProbes, policy: state.policy, policyWarnings: state.policyWarnings });
+}
+const MCP_PROBE_LIMIT = 300;
+const MCP_PROBE_BATCH = 8;
+/**
+ * Asks the permission system about every loaded MCP tool with an empty input.
+ * Nothing runs. Bounded in number and concurrency; a failed check is `unknown`.
+ */
+async function probeMcpTools($, names) {
+    const results = [];
+    const wanted = names.slice(0, MCP_PROBE_LIMIT);
+    for (let start = 0; start < wanted.length; start += MCP_PROBE_BATCH) {
+        const batch = wanted.slice(start, start + MCP_PROBE_BATCH);
+        results.push(...await Promise.all(batch.map(async (name) => {
+            try {
+                return { name, verdict: (await $.tool.check({ tool: name, input: {} })).decision };
+            }
+            catch {
+                return { name, verdict: 'unknown' };
+            }
+        })));
+    }
+    return results;
+}
+/** Reads and validates .cognita.json from the project root. A missing file is no policy; a bad one is a warning. */
+async function readPolicy($) {
+    try {
+        // The bundled type stub lists only `$.fs.list`; the engine also has `$.fs.read`.
+        // @ts-ignore
+        const text = await $.fs.read(POLICY_FILE);
+        return parsePolicy(text);
+    }
+    catch {
+        // No file (the usual case) or unreadable: no policy.
+        return { policy: { require: {}, actions: [] }, warnings: [] };
+    }
 }
 /** Budget and growth warnings from CLAUDE_INSPECTOR_BUDGET and CLAUDE_INSPECTOR_ALERT. */
 async function readAlertSettings($) {
