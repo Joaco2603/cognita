@@ -235,7 +235,7 @@ export const VERDICT_MARKS: Record<Verdict, string> = {
 
 const ACCESS_ROWS = 15
 
-function table(headers: string[], rows: string[][]): string[] {
+export function table(headers: string[], rows: string[][]): string[] {
   const escape = (cell: string) => cell.replaceAll('|', '\\|')
   if (rows.length === 0) return ['_None._']
   return [
@@ -245,7 +245,7 @@ function table(headers: string[], rows: string[][]): string[] {
   ]
 }
 
-function capped<T>(items: T[], limit = ACCESS_ROWS): { shown: T[]; rest: number } {
+export function capped<T>(items: T[], limit = ACCESS_ROWS): { shown: T[]; rest: number } {
   return { shown: items.slice(0, limit), rest: Math.max(0, items.length - limit) }
 }
 
