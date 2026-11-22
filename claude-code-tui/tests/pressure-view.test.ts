@@ -47,6 +47,9 @@ type Session = {
   submitted?: string[]
   compacted?: string[]
   compactFails?: boolean
+  /** No model reply yet: usage has no token count until asked for a breakdown. */
+  noCountYet?: boolean
+  requested?: unknown[]
 }
 
 function breakdownFor(percent: number) {
@@ -80,13 +83,15 @@ function mockSession(on: any, session: Session) {
     session.toasts?.push(String(event.text ?? event.message ?? event))
     return { value: undefined }
   })
-  on('session.usage', () => ({
-    value: {
-      startedAt: 0,
-      context: { tokens: session.percent * 2000, window: 200000, percent: session.percent, breakdown: breakdownFor(session.percent) },
-      rateLimits: [],
-    },
-  }))
+  on('session.usage', (_$: any, event: any) => {
+    session.requested?.push(event.breakdown)
+    const context = session.noCountYet && !event.breakdown
+      ? { window: 200000 }
+      : session.noCountYet
+        ? { window: 200000, breakdown: breakdownFor(session.percent) }
+        : { tokens: session.percent * 2000, window: 200000, percent: session.percent, breakdown: breakdownFor(session.percent) }
+    return { value: { startedAt: 0, context, rateLimits: [] } }
+  })
   on('session.messages', () => ({ value: session.messages ?? [] }))
   on('tool.list', () => ({ value: (session.tools ?? ['Bash', 'Read']).map((name) => ({ name, description: name, mcp: name.startsWith('mcp__') })) }))
   on('prompt.suggest', (_$: any, event: any) => {
@@ -258,4 +263,13 @@ test('the Overview shows the pressure card with the next step, and c compacts', 
   await ui.press({ key: 'pressure-compact' })
   expect(session.compacted?.length).toBe(1)
   expect(session.toasts).toContain('Compacted, keeping the goal and the open plan.')
+})
+
+test('before the first reply, the window comes from the breakdown of what is loaded', async ($, on) => {
+  const session: Session = { percent: 17, noCountYet: true, requested: [] }
+  await start($, on, session)
+  const text = await run($, 'pressure')
+
+  expect(session.requested).toEqual([undefined, 'summary'])
+  expect(text).toContain('window 17% (34,000 of 200,000 tokens)')
 })

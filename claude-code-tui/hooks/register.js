@@ -212,6 +212,12 @@ async function startupCheck($, state) {
 /** How full the window is, from Claude Code's own count. */
 async function readWindow($) {
     const { context } = (await $.session.usage());
+    if (context.percent === undefined && context.tokens === undefined) {
+        // No model reply yet, so no count: measure what is loaded instead.
+        const breakdown = (await $.session.usage({ breakdown: 'summary', columns: 80 })).context.breakdown;
+        if (breakdown)
+            return { windowPercent: breakdown.percentage, windowTokens: breakdown.totalTokens, windowMax: breakdown.maxTokens };
+    }
     const percent = context.percent ?? (context.tokens !== undefined && context.window > 0 ? (context.tokens / context.window) * 100 : 0);
     return { windowPercent: percent, windowTokens: context.tokens, windowMax: context.window };
 }
