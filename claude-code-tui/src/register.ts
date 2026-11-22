@@ -1,4 +1,5 @@
-import { analyzeAccess, formatAccess, formatAccessJson, PROBES, SETTINGS_SOURCES, type AccessReport, type ProbeResult, type SettingsSourceName } from './access.js'
+import { analyzeAccess, formatAccess, formatAccessJson, PROBES, SETTINGS_SOURCES, type AccessReport, type ProbeResult, type SettingsSourceName, type Verdict } from './access.js'
+import { customProbes, mergeAlerts, parsePolicy, POLICY_FILE, type Policy } from './policy.js'
 import { renderAccess } from './access-view.js'
 import { analyzeSupplyChain, formatSupplyChain, formatSupplyChainJson, type SupplyChainReport } from './supply-chain.js'
 import { renderAgents } from './agents-view.js'
@@ -101,6 +102,9 @@ type State = {
   costSaved: number
   /** Store writes run one after another so none loses another's update. */
   costWrite: Promise<void>
+  /** Team policy from .cognita.json, and what was wrong with the file. */
+  policy: Policy
+  policyWarnings: string[]
   // Context loadout: measured on demand, plus what the observe hooks record.
   usageLog: UsageLog
   loadout?: Loadout
@@ -142,6 +146,8 @@ function createState(): State {
     alerts: { growth: DEFAULT_GROWTH_ALERT },
     costSaved: -1,
     costWrite: Promise.resolve(),
+    policy: { require: {}, actions: [] },
+    policyWarnings: [],
     usageLog: emptyUsage(),
     loadoutDetail: 'summary',
     measuredAt: '',
@@ -201,7 +207,7 @@ async function refreshAccess($: ModApi, state: State): Promise<void> {
   state.accessError = ''
   $.ui.invalidate('ui.render')
   try {
-    applyAccess(state, await readAccess($, state.currentDirectory))
+    applyAccess(state, await readAccess($, state.currentDirectory, state))
   } catch {
     state.accessError = 'Could not read the tools and permissions of this session.'
   } finally {
@@ -314,7 +320,7 @@ async function runCommand($: ModApi, state: State, event: ModEvent): Promise<{ t
 
   if (subcommand === 'access' && !options.has('open')) {
     try {
-      const report = applyAccess(state, await readAccess($, state.currentDirectory))
+      const report = applyAccess(state, await readAccess($, state.currentDirectory, state))
       if (options.has('json')) return { text: '```json\n' + formatAccessJson(report) + '\n```' }
       return { text: formatAccess(report) }
     } catch {
@@ -564,7 +570,10 @@ export function register(on: ModOn): void {
     state.currentDirectory = event.cwd ?? ''
     state.lazy.setCwd(state.currentDirectory)
     state.isStatusLineEnabled = (await $.env.get('CLAUDE_INSPECTOR_STATUSLINE'))?.trim() !== '0'
-    state.alerts = await readAlertSettings($)
+    const loaded = await readPolicy($)
+    state.policy = loaded.policy
+    state.policyWarnings = loaded.warnings
+    state.alerts = mergeAlerts(state.policy, await readAlertSettings($))
     state.spendBudget = parseSpendBudget(await $.env.get('CLAUDE_INSPECTOR_SPEND_BUDGET'))
     const isStartupCheckEnabled = (await $.env.get('CLAUDE_INSPECTOR_STARTUP_CHECK'))?.trim() !== '0'
     const result = await next?.(event)
@@ -669,13 +678,13 @@ async function readLoadout($: ModApi, detail: 'summary' | 'full', usageLog: Usag
  * for a set of sample actions (asked, never run), settings, plugins and commands.
  * Every part is best effort, so one failing API leaves the rest of the report.
  */
-async function readAccess($: ModApi, cwd: string): Promise<AccessReport> {
+async function readAccess($: ModApi, cwd: string, state: Pick<State, 'policy' | 'policyWarnings'>): Promise<AccessReport> {
   const tools = await $.tool.list()
   const names = new Set(tools.map((tool) => tool.name))
   const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE')) || '~'
   const paths = { cwd: cwd || '.', home }
 
-  const probes = await Promise.all(PROBES.map(async (probe): Promise<ProbeResult> => {
+  const probes = await Promise.all([...PROBES, ...customProbes(state.policy)].map(async (probe): Promise<ProbeResult> => {
     const base = { key: probe.key, label: probe.label, tool: probe.tool, isRisky: probe.isRisky }
     if (!names.has(probe.tool)) return { ...base, verdict: 'missing' }
     try {
@@ -685,6 +694,8 @@ async function readAccess($: ModApi, cwd: string): Promise<AccessReport> {
       return { ...base, verdict: 'unknown' }
     }
   }))
+
+  const mcpProbes = await probeMcpTools($, tools.filter((tool) => tool.mcp).map((tool) => tool.name))
 
   const settings: Partial<Record<SettingsSourceName, unknown>> = {}
   await Promise.all(SETTINGS_SOURCES.map(async (source) => {
@@ -701,7 +712,43 @@ async function readAccess($: ModApi, cwd: string): Promise<AccessReport> {
     $.session.version().then((value) => value.version).catch(() => undefined),
   ])
 
-  return analyzeAccess({ model, version, tools, probes, settings, commands })
+  return analyzeAccess({ model, version, tools, probes, settings, commands, mcpProbes, policy: state.policy, policyWarnings: state.policyWarnings })
+}
+
+const MCP_PROBE_LIMIT = 300
+const MCP_PROBE_BATCH = 8
+
+/**
+ * Asks the permission system about every loaded MCP tool with an empty input.
+ * Nothing runs. Bounded in number and concurrency; a failed check is `unknown`.
+ */
+async function probeMcpTools($: ModApi, names: string[]): Promise<Array<{ name: string; verdict: Verdict }>> {
+  const results: Array<{ name: string; verdict: Verdict }> = []
+  const wanted = names.slice(0, MCP_PROBE_LIMIT)
+  for (let start = 0; start < wanted.length; start += MCP_PROBE_BATCH) {
+    const batch = wanted.slice(start, start + MCP_PROBE_BATCH)
+    results.push(...await Promise.all(batch.map(async (name) => {
+      try {
+        return { name, verdict: (await $.tool.check({ tool: name, input: {} })).decision as Verdict }
+      } catch {
+        return { name, verdict: 'unknown' as Verdict }
+      }
+    })))
+  }
+  return results
+}
+
+/** Reads and validates .cognita.json from the project root. A missing file is no policy; a bad one is a warning. */
+async function readPolicy($: ModApi): Promise<{ policy: Policy; warnings: string[] }> {
+  try {
+    // The bundled type stub lists only `$.fs.list`; the engine also has `$.fs.read`.
+    // @ts-ignore
+    const text: string = await $.fs.read(POLICY_FILE)
+    return parsePolicy(text)
+  } catch {
+    // No file (the usual case) or unreadable: no policy.
+    return { policy: { require: {}, actions: [] }, warnings: [] }
+  }
 }
 
 /**

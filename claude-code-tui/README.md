@@ -120,7 +120,9 @@ One screen with the three answers: how full the window is and how much of it is 
   | ⚠ Read SSH keys | `Read: ~/.ssh/id_rsa` |
   | ⚠ Write outside the project | `Write: ~/.bashrc` |
 
-- **Tools.** Built-in tools, and MCP tools grouped by server.
+- **Your own actions.** Actions declared in [`.cognita.json`](#cognitajson-the-team-policy), such as `terraform apply` or `kubectl delete`, are asked of the permission system the same way.
+- **Tools.** Built-in tools, and MCP tools grouped by server. Every loaded MCP tool is also asked, with an empty input and nothing run, and each server shows how many of its tools run without asking (capped at 300 tools, best effort).
+- **Too broad.** Allow rules that grant far more than one command are flagged with the settings source that defines them: `Bash`, `Bash(*)`, `Bash(:*)`, `Write`/`Edit` with no pattern, `*` or `**`, and whole-server rules (`mcp__server`, `mcp__server__*`).
 - **Rules.** Allow, ask and deny rules by settings source (user, project, local, flag, policy), the permission mode and extra directories.
 - **Hooks & plugins.** Hook commands from your settings by event (they run on your machine during the session), and the plugins that are enabled.
 - **Warnings first.** `bypassPermissions` mode, risky actions that run without asking, and hook commands are flagged at the top.
@@ -198,6 +200,8 @@ Claude Code reports what the session has cost in USD. Cognita keeps the highest 
 
 ## Configuration
 
+Variables are the per-machine fallback; a `.cognita.json` in the project wins.
+
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `CLAUDE_INSPECTOR_BUDGET` | none | Tokens that may load before the first message, such as `30000`, `30k` or `1.5M` |
@@ -205,6 +209,26 @@ Claude Code reports what the session has cost in USD. Cognita keeps the highest 
 | `CLAUDE_INSPECTOR_SPEND_BUDGET` | none | Monthly spend in USD, such as `50`; `/cognita cost` shows the share used and a startup toast warns when over |
 | `CLAUDE_INSPECTOR_STARTUP_CHECK` | on | Set it to `0` to skip the background measurement at session start |
 | `CLAUDE_INSPECTOR_STATUSLINE` | on | Set it to `0` to keep the status line untouched |
+
+### `.cognita.json`: the team policy
+
+Commit a `.cognita.json` at the project root so everyone uses the same rules, like an `.editorconfig`. It is read when the session starts, from the session's working directory.
+
+```json
+{
+  "budget": "30k",
+  "alert": 1500,
+  "require": { "env": "ask", "delete": "deny" },
+  "actions": [
+    { "key": "tf", "label": "Terraform apply", "tool": "Bash", "input": { "command": "terraform apply" }, "risky": true }
+  ]
+}
+```
+
+- `budget` and `alert` take a number or a string such as `"30k"`. They win over `CLAUDE_INSPECTOR_BUDGET` and `CLAUDE_INSPECTOR_ALERT`, which stay as the per-machine fallback.
+- `require` maps an action key to the verdict it must have at least: `allow`, `ask` or `deny` (stricter wins). Keys are the built-in ones (`shell`, `edit`, `web`, `push`, `delete`, `env`, `ssh`, `outside`) or your own. An action that is less strict is listed as a violation: `Policy: Read .env secrets must ask; it runs without asking.`
+- `actions` adds probes: `key`, `tool` and `input` are required, `label` and `risky` optional. A key may not reuse a built-in one.
+- An invalid file never breaks Cognita: it is ignored and the problem shows as a warning in `/cognita access` and the Overview. Cognita only reads this file; it never writes settings.
 
 ## Privacy and safety
 
