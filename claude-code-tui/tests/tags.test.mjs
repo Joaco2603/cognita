@@ -122,3 +122,9 @@ test('an item seen before keeps its id when the prompts are read again', () => {
   const again = extractTagged(['<decision>Use Postgres</decision> <open>Docs</open> <decision>Ship on Friday</decision>'], before)
   assert.deepEqual(again.map((item) => item.id), ['d1', 'o1', 'd2'])
 })
+
+test('retention prefers the bracketed id over the same word on an unrelated line', () => {
+  const items = extractTagged(['<open>Pick a cache TTL</open>'])
+  const summary = 'We switched to the o1 model.\n- [o1] open: Pick a cache TTL'
+  assert.equal(retentionOf(items, summary).items[0].status, 'kept')
+})

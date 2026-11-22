@@ -155,8 +155,11 @@ const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 export function retentionOf(items: readonly TaggedItem[], summary: string): Retention {
   const lines = summary.split('\n')
   const result: ItemRetention[] = items.map((item) => {
-    const id = new RegExp(`\\[${escape(item.id)}\\]|\\b${escape(item.id)}\\b`, 'i')
-    const line = lines.find((candidate) => id.test(candidate))
+    // The bracketed id the summarizer was asked for wins over the bare word,
+    // which short ids like `o1` share with unrelated text.
+    const bracketed = new RegExp(`\\[${escape(item.id)}\\]`, 'i')
+    const bare = new RegExp(`\\b${escape(item.id)}\\b`, 'i')
+    const line = lines.find((candidate) => bracketed.test(candidate)) ?? lines.find((candidate) => bare.test(candidate))
     if (line !== undefined) {
       const overlap = overlapOf(item.text, line)
       return { id: item.id, kind: item.kind, text: item.text, status: overlap >= KEPT_FROM ? 'kept' : 'rewritten', overlap }
