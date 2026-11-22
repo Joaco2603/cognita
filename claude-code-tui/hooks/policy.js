@@ -81,6 +81,21 @@ export function parsePolicy(text) {
     return { policy, warnings };
 }
 /** The policy wins over the env settings; the env settings are the fallback. */
+/**
+ * Warnings for a policy read that failed. `fileListed` is whether the project
+ * folder lists the file (undefined when that could not be checked). An absent
+ * file is the usual case and means no policy; anything else must be visible,
+ * so a team policy is never dropped silently.
+ */
+export function policyReadFailure(error, fileListed) {
+    if (fileListed === false)
+        return [];
+    const reason = error instanceof Error ? error.message : String(error);
+    if (fileListed === undefined) {
+        return [`${POLICY_FILE}: could not check for it (${reason}); a team policy, if there is one, is not applied.`];
+    }
+    return [`${POLICY_FILE} exists but could not be read (${reason}); the team policy is not applied.`];
+}
 export function mergeAlerts(policy, env) {
     return { budget: policy.budget ?? env.budget, growth: policy.alert ?? env.growth };
 }

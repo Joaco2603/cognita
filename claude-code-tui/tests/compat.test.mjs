@@ -68,3 +68,11 @@ test('doctor lists every requirement and the version', () => {
   assert.match(text, /missing/i)
   assert.match(formatDoctor(checkCompatibility(fullProbes()), undefined), /unknown/i)
 })
+
+test('the team policy and supply chain file APIs are checked', () => {
+  const apis = REQUIREMENTS.map((entry) => entry.api)
+  assert.ok(apis.includes('$.fs.read'))
+  assert.ok(apis.includes('$.fs.list'))
+  const missingRead = checkCompatibility({ ...Object.fromEntries(REQUIREMENTS.filter((e) => e.probed).map((e) => [e.api, true])), '$.fs.read': false })
+  assert.match(compatToast(missingRead), /\.cognita\.json/)
+})

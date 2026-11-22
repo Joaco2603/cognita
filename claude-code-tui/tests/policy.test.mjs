@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { parsePolicy, policyViolations, mergeAlerts, customProbes, POLICY_FILE } from '../hooks/policy.js'
+import { parsePolicy, policyViolations, mergeAlerts, customProbes, policyReadFailure, POLICY_FILE } from '../hooks/policy.js'
 
 test('parsePolicy reads budget (number or "30k"), alert and require', () => {
   const { policy, warnings } = parsePolicy(JSON.stringify({ budget: '30k', alert: 1500, require: { env: 'ask', delete: 'deny' } }))
@@ -54,4 +54,16 @@ test('custom actions are validated and become probes', () => {
   assert.equal(probes.length, 1)
   assert.equal(probes[0].isRisky, true)
   assert.deepEqual(probes[0].input({ cwd: '/x', home: '/h' }), { command: 'terraform apply' })
+})
+
+test('policyReadFailure: an absent file is no policy, but a file that exists and could not be read is a warning', () => {
+  assert.deepEqual(policyReadFailure(new Error('ENOENT'), false), [])
+  const unreadable = policyReadFailure(new Error('EACCES: permission denied'), true)
+  assert.equal(unreadable.length, 1)
+  assert.match(unreadable[0], /\.cognita\.json exists but could not be read/)
+  assert.match(unreadable[0], /not applied/)
+  assert.match(unreadable[0], /EACCES/)
+  const unknown = policyReadFailure(new TypeError('$.fs.read is not a function'), undefined)
+  assert.equal(unknown.length, 1)
+  assert.match(unknown[0], /could not check/i)
 })

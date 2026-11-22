@@ -1,5 +1,5 @@
 import { analyzeAccess, formatAccess, formatAccessJson, PROBES, SETTINGS_SOURCES, type AccessReport, type ProbeResult, type SettingsSourceName, type Verdict } from './access.js'
-import { customProbes, mergeAlerts, parsePolicy, POLICY_FILE, type Policy } from './policy.js'
+import { customProbes, mergeAlerts, parsePolicy, policyReadFailure, POLICY_FILE, type Policy } from './policy.js'
 import { renderAccess } from './access-view.js'
 import { analyzeSupplyChain, formatSupplyChain, formatSupplyChainJson, type SupplyChainReport } from './supply-chain.js'
 import { checkCompatibility, compatLine, probeEngine, compatToast, formatDoctor, type CompatReport } from './compat.js'
@@ -769,9 +769,16 @@ async function readPolicy($: ModApi): Promise<{ policy: Policy; warnings: string
   try {
     const text: string = await $.fs.read(POLICY_FILE)
     return parsePolicy(text)
-  } catch {
-    // No file (the usual case) or unreadable: no policy.
-    return { policy: { require: {}, actions: [] }, warnings: [] }
+  } catch (error) {
+    // No file is the usual case and means no policy; a file that is there but
+    // unreadable, or a folder that cannot be listed, becomes a visible warning.
+    let fileListed: boolean | undefined
+    try {
+      fileListed = (await $.fs.list('.')).some((entry) => entry.name === POLICY_FILE)
+    } catch {
+      fileListed = undefined
+    }
+    return { policy: { require: {}, actions: [] }, warnings: policyReadFailure(error, fileListed) }
   }
 }
 

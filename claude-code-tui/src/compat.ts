@@ -30,6 +30,8 @@ export const REQUIREMENTS: readonly Requirement[] = [
   { api: '$.ui.toast', feature: 'Startup alerts', probed: false },
   { api: '$.ui.status', feature: 'Status line', probed: false },
   { api: '$.env.get', feature: 'Settings from environment', probed: true },
+  { api: '$.fs.read', feature: 'Team policy (.cognita.json)', probed: true },
+  { api: '$.fs.list', feature: 'Supply chain (.mcp.json)', probed: true },
   { api: '$.mcp.connect', feature: 'Lazy MCP (hold and connect)', probed: false },
 ]
 
@@ -70,6 +72,8 @@ export async function probeEngine($: any): Promise<Record<string, boolean>> {
   found['$.agent.list'] = await attempt(() => $.agent.list())
   found['$.command.list'] = await attempt(() => $.command.list())
   found['$.env.get'] = await attempt(() => $.env.get('HOME'))
+  found['$.fs.read'] = await attempt(() => $.fs.read('.cognita.json'))
+  found['$.fs.list'] = await attempt(() => $.fs.list('.'))
   found['$.ui.invalidate'] = await attempt(async () => $.ui.invalidate('ui.render'))
   return found
 }
