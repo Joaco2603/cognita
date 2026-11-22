@@ -104,3 +104,21 @@ test('a settings object that is not an object never throws', () => {
   assert.equal(report.unpinned, 0)
   assert.match(formatSupplyChain(report), /No unpinned commands/)
 })
+
+test('S1: shells and cmd run the command they are given', () => {
+  assert.equal(pin('bash -c "npx -y some-tool"'), 'unpinned')
+  assert.equal(pin("sh -lc 'uvx mcp-server-fetch'"), 'unpinned')
+  assert.equal(pin('cmd /c npx -y some-tool'), 'unpinned')
+  assert.equal(pin('cmd', ['/c', 'npx', '-y', 'some-tool']), 'unpinned')
+  assert.equal(pin('powershell -Command "npx some-tool"'), 'unpinned')
+  assert.equal(pin('bash', ['-c', 'npx -y some-tool@1.2.3']), 'pinned')
+  assert.equal(pin('bash ./run.sh'), 'local')
+})
+
+test('S1: wrapper flags and quoted env values do not hide the runner', () => {
+  assert.equal(pin('env -i X=1 npx some-tool'), 'unpinned')
+  assert.equal(pin('sudo -E npx some-tool'), 'unpinned')
+  assert.equal(pin('sudo -u root npx some-tool'), 'unpinned')
+  assert.equal(pin('FOO="a b" npx -y some-tool'), 'unpinned')
+  assert.equal(pin('FOO="a b" npx -y some-tool@1.2.3'), 'pinned')
+})

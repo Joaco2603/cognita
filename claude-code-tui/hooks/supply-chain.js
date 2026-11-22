@@ -7,11 +7,41 @@ const record = (value) => value && typeof value === 'object' && !Array.isArray(v
 const text = (value) => (typeof value === 'string' ? value : '');
 const EXACT_SEMVER = /^v?\d+\.\d+\.\d+([-+][0-9A-Za-z.+-]+)?$/;
 const SEVERITY = { unpinned: 4, remote: 3, pinned: 2, local: 1, unknown: 0 };
-/** Splits a command into words, honoring simple quotes. */
+/** Splits a command into words, honoring quotes (also inside a word: `FOO="a b"`). */
 function tokenize(command) {
     const tokens = [];
-    for (const match of command.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g))
-        tokens.push(match[1] ?? match[2] ?? match[3] ?? '');
+    let current = '';
+    let started = false;
+    let quote = '';
+    for (let index = 0; index < command.length; index += 1) {
+        const char = command[index];
+        if (quote) {
+            if (char === quote)
+                quote = '';
+            else if (quote === '"' && char === '\\' && command[index + 1] === '"') {
+                current += '"';
+                index += 1;
+            }
+            else
+                current += char;
+        }
+        else if (char === '"' || char === "'") {
+            quote = char;
+            started = true;
+        }
+        else if (/\s/.test(char)) {
+            if (started)
+                tokens.push(current);
+            current = '';
+            started = false;
+        }
+        else {
+            current += char;
+            started = true;
+        }
+    }
+    if (started)
+        tokens.push(current);
     return tokens;
 }
 const baseName = (token) => (token.split(/[\\/]/).pop() ?? token).toLowerCase().replace(/\.(cmd|exe|bat)$/, '');
@@ -104,16 +134,63 @@ function classifyImage(image) {
 }
 const NPM_VALUE_FLAGS = new Set(['-c', '--call', '--registry', '--cache', '--prefix', '--workspace', '-w', '--node-options']);
 const PYTHON_VALUE_FLAGS = new Set(['--from', '--spec', '-p', '--python', '--with', '--with-requirements', '--index', '--index-url', '-i', '--extra-index-url', '--env-file', '--directory']);
+const WRAPPER_VALUE_FLAGS = {
+    sudo: new Set(['-u', '-g', '-h', '-p', '-C', '-D', '-R', '-T', '-U', '--user', '--group', '--host', '--prompt', '--chdir']),
+    env: new Set(['-u', '-C', '--unset', '--chdir']),
+    exec: new Set(['-a']),
+};
 const WRAPPERS = new Set(['sudo', 'env', 'exec', 'command', 'time', 'nohup']);
-const INTERPRETERS = new Set(['node', 'deno', 'bun', 'python', 'python3', 'ruby', 'bash', 'sh', 'zsh', 'pwsh', 'powershell']);
-function classifySegment(rawTokens) {
-    let tokens = rawTokens;
-    while (tokens.length > 0 && (/^[A-Za-z_]\w*=/.test(tokens[0]) || WRAPPERS.has(baseName(tokens[0]))))
-        tokens = tokens.slice(1);
+const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'pwsh', 'powershell', 'cmd']);
+const INTERPRETERS = new Set(['node', 'deno', 'bun', 'python', 'python3', 'ruby', ...SHELLS]);
+const MAX_DEPTH = 5;
+/** The command string a shell is told to run (`bash -c STR`, `cmd /c STR...`), if any. */
+function shellInline(shell, rest) {
+    if (shell === 'cmd') {
+        const at = rest.findIndex((token) => /^\/[ckr]$/i.test(token));
+        return at >= 0 ? rest.slice(at + 1).join(' ') : undefined;
+    }
+    if (shell === 'pwsh' || shell === 'powershell') {
+        const at = rest.findIndex((token) => /^-(c|command|commandwithargs)$/i.test(token));
+        return at >= 0 ? rest.slice(at + 1).join(' ') : undefined;
+    }
+    const at = rest.findIndex((token) => /^-[A-Za-z]*c[A-Za-z]*$/.test(token));
+    return at >= 0 ? rest[at + 1] : undefined;
+}
+/** Drops env assignments and wrapper commands (with their flags) in front of the real command. */
+function stripWrappers(tokens) {
+    let index = 0;
+    while (index < tokens.length) {
+        if (/^[A-Za-z_]\w*=/.test(tokens[index])) {
+            index += 1;
+            continue;
+        }
+        const wrapper = baseName(tokens[index]);
+        if (!WRAPPERS.has(wrapper))
+            break;
+        index += 1;
+        const valueFlags = WRAPPER_VALUE_FLAGS[wrapper];
+        while (index < tokens.length && tokens[index].startsWith('-')) {
+            const flag = tokens[index];
+            index += 1;
+            if (flag === '--')
+                break;
+            if (valueFlags?.has(flag))
+                index += 1;
+        }
+    }
+    return tokens.slice(index);
+}
+function classifySegment(rawTokens, depth = 0) {
+    const tokens = stripWrappers(rawTokens);
     if (tokens.length === 0)
         return { pin: 'local', reason: 'no command' };
     const head = baseName(tokens[0]);
     const rest = tokens.slice(1);
+    if (SHELLS.has(head) && depth < MAX_DEPTH) {
+        const inline = shellInline(head, rest);
+        if (inline)
+            return classifyShellString(inline, depth + 1);
+    }
     if (isUrl(tokens[0]))
         return { pin: 'remote', reason: 'a URL' };
     const npmRunner = head === 'npx' || head === 'bunx'
@@ -148,6 +225,17 @@ function classifySegment(rawTokens) {
         return { pin: 'local', reason: 'a local script' };
     return { pin: 'local', reason: `runs ${head} from this machine` };
 }
+/** Classifies one shell string: the worst of its segments. */
+function classifyShellString(command, depth) {
+    const segments = command.split(/&&|\|\||;|\|/).map(tokenize).filter((tokens) => tokens.length > 0);
+    let worst = { pin: 'local', reason: 'no command' };
+    for (const tokens of segments) {
+        const result = classifySegment(tokens, depth);
+        if (SEVERITY[result.pin] > SEVERITY[worst.pin] || worst.reason === 'no command')
+            worst = result;
+    }
+    return worst;
+}
 /**
  * Says whether a command pins the code it runs. `args` is the separate argument
  * list of an MCP server; a hook passes its whole shell string as `command`.
@@ -159,14 +247,10 @@ export function classifyCommand(command, args = []) {
         }
         const segments = args.length > 0
             ? [[...tokenize(command), ...args]]
-            : command.split(/&&|\|\||;|\|/).map(tokenize).filter((tokens) => tokens.length > 0);
-        let worst = { pin: 'local', reason: 'no command' };
-        for (const tokens of segments) {
-            const result = classifySegment(tokens);
-            if (SEVERITY[result.pin] > SEVERITY[worst.pin] || worst.reason === 'no command')
-                worst = result;
-        }
-        return worst;
+            : null;
+        if (segments)
+            return classifySegment(segments[0]);
+        return classifyShellString(command, 0);
     }
     catch {
         return { pin: 'unknown', reason: 'could not parse the command' };
