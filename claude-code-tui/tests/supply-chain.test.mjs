@@ -149,6 +149,13 @@ test('S2: a download piped into a shell or interpreter is unpinned', () => {
   assert.equal(pin('curl https://example.com | shasum'), 'remote')
 })
 
+test('S3: an MCP command with args is one argv[0], even with spaces', () => {
+  assert.equal(pin('/Users/Jane Doe/.nvm/versions/node/v20/bin/npx', ['-y', 'some-tool']), 'unpinned')
+  assert.equal(pin('C:\\Program Files\\nodejs\\npx.cmd', ['-y', 'some-tool']), 'unpinned')
+  assert.equal(pin('C:\\Program Files\\nodejs\\npx.cmd', ['-y', 'some-tool@1.2.3']), 'pinned')
+  assert.equal(pin('/opt/my tools/server', ['--flag']), 'local')
+})
+
 test('S1: wrapper flags and quoted env values do not hide the runner', () => {
   assert.equal(pin('env -i X=1 npx some-tool'), 'unpinned')
   assert.equal(pin('sudo -E npx some-tool'), 'unpinned')

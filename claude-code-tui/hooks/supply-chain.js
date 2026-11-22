@@ -334,11 +334,9 @@ export function classifyCommand(command, args = []) {
         if (pipesDownloadIntoShell([command, ...args].join(' '))) {
             return { pin: 'unpinned', reason: 'pipes a download into a shell' };
         }
-        const segments = args.length > 0
-            ? [[...tokenize(command), ...args]]
-            : null;
-        if (segments)
-            return classifySegment(segments[0]);
+        // An MCP server spawns `command` as a single argv[0]: never split it on spaces.
+        if (args.length > 0)
+            return classifySegment([command, ...args]);
         return classifyShellString(command, 0);
     }
     catch {
