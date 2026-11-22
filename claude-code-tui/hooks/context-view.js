@@ -1,4 +1,5 @@
 import { estimateTokens, meter, pluginSections, share, shortPath, } from './loadout.js';
+import { serverKey } from './lazy-mcp.js';
 import { formatTokenCount, formatTokensShort, slug } from './utils.js';
 import { ACCENT, BORDER, ERROR, WARN, keyHints } from './theme.js';
 const MAX_ROWS = 12;
@@ -88,6 +89,43 @@ export function renderContext(ui, options) {
             }),
         ],
     });
+    /** Hold buttons for idle servers, and the servers this project already holds. */
+    const lazySection = (loaded) => {
+        const heldKeys = new Set(options.held.map((item) => item.key));
+        const idle = loaded.mcpServers.filter((server) => server.calls === 0 && server.tokens > 0 && !heldKeys.has(serverKey(server.server)));
+        const unusedNote = (server) => {
+            const sessions = options.unusedSessions[serverKey(server)];
+            return sessions ? ` · unused in ${sessions} sessions` : '';
+        };
+        const canConnect = options.held.some((item) => item.state === 'held now');
+        return [
+            idle.length > 0 ? Text({ children: ['Hold for this project (off from the next session):'], dimColor: true }) : null,
+            Box({
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                columnGap: 2,
+                children: idle.slice(0, MAX_ROWS).map((server) => Button({
+                    key: `context-mcp-hold-${slug(server.server)}`,
+                    label: `⏸ ${server.server}${unusedNote(server.server)}`,
+                    plain: true,
+                    onPress: () => options.onHold(server.server),
+                })),
+            }),
+            options.held.length > 0 ? heading(`HELD FOR THIS PROJECT · ${options.held.length}`) : null,
+            ...options.held.map((item) => Box({
+                key: `context-mcp-held-row-${slug(item.name)}`,
+                flexDirection: 'row',
+                columnGap: 1,
+                children: [
+                    Button({ key: `context-mcp-held-${slug(item.name)}`, label: `↺ ${item.name}`, plain: true, onPress: () => options.onConnect(item.name) }),
+                    Text({ children: [item.state], dimColor: true }),
+                ],
+            })),
+            canConnect
+                ? Button({ key: 'context-mcp-connect-held', label: '↺ Connect held', hotkey: 'c', plain: true, onPress: () => options.onConnect() })
+                : null,
+        ];
+    };
     const loadout = options.loadout;
     if (!loadout) {
         return Box({
@@ -152,6 +190,7 @@ export function renderContext(ui, options) {
                 loadout.mcpServers.length === 0 ? Text({ children: ['No MCP servers are connected.'], dimColor: true }) : null,
                 more(loadout.mcpServers.length),
                 Text({ children: ['Deferred tools cost nothing until ToolSearch loads them.'], dimColor: true }),
+                ...lazySection(loadout),
             ];
             break;
         case 'skills':

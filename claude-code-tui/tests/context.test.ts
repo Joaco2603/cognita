@@ -284,6 +284,6 @@ test('/cognita trim prints a plan with commands', async ($, on) => {
   const { text } = await $.command.run({ command: 'cognita', args: 'trim' }) as { text: string }
   expect(text).toContain('## Trim plan')
   expect(text).toContain('claude plugin disable ops --scope local')
-  expect(text).toContain('pick `linear` and choose **Disable**')
+  expect(text).toContain('/cognita hold linear')
   expect(text).toContain('within budget')
 })

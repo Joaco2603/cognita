@@ -83,6 +83,7 @@ export function renderAccess(ui, options) {
     const flags = access.flags.length === 0
         ? [Text({ key: 'access-flag-none', children: ['✓ No risky action runs without asking.'], color: OK })]
         : access.flags.map((flag, index) => Text({ key: `access-flag-${index}`, children: [`⚠ ${flag}`], color: flag.includes('bypassPermissions') ? ERROR : WARN }));
+    const policyWarnings = access.policyWarnings.map((warning, index) => Text({ key: `access-policy-warning-${index}`, children: [`⚠ ${warning}`], color: WARN, wrap: 'wrap' }));
     let body;
     switch (options.subview) {
         case 'tools':
@@ -93,6 +94,8 @@ export function renderAccess(ui, options) {
                 ...access.mcpServers.slice(0, MAX_ROWS).map((server) => row(`access-mcp-${slug(server.server)}`, server.server, `${server.tools} tools`)),
                 access.mcpServers.length === 0 ? dim('access-mcp-none', 'No MCP server tools in this session.') : null,
                 more(access.mcpServers.length),
+                access.mcpAccess.length > 0 ? heading('MCP TOOLS THAT RUN WITHOUT ASKING') : null,
+                ...access.mcpAccess.slice(0, MAX_ROWS).map((server) => row(`access-mcp-access-${slug(server.server)}`, server.server, `${server.allowed.length}/${server.checked}`, server.allowed.length > 0 ? WARN : OK, server.allowed.slice(0, 3).join(', '))),
                 heading(`SLASH COMMANDS · ${access.commandCount}`),
                 ...access.commands.slice(0, 6).map((group) => row(`access-commands-${slug(group.source)}`, group.source, String(group.count))),
             ];
@@ -110,6 +113,8 @@ export function renderAccess(ui, options) {
                 more(all.length),
                 access.additionalDirectories.length > 0 ? heading('EXTRA DIRECTORIES') : null,
                 ...access.additionalDirectories.slice(0, 6).map((directory) => Text({ key: `access-dir-${slug(directory)}`, children: [directory], wrap: 'truncate-middle' })),
+                access.broadRules.length > 0 ? heading('TOO BROAD') : null,
+                ...access.broadRules.slice(0, 6).map((item, index) => row(`access-broad-${index}`, item.rule, item.source, WARN, item.why)),
                 heading('WHERE THEY COME FROM'),
                 ...access.rules.map((rules) => row(`access-source-${rules.source}`, rules.label, `${rules.allow.length}/${rules.ask.length}/${rules.deny.length}`, undefined, rules.defaultMode ? `mode ${rules.defaultMode}` : 'allow/ask/deny')),
                 access.rules.length === 0 ? dim('access-sources-none', 'Every settings file is empty of permission rules.') : null,
@@ -130,6 +135,7 @@ export function renderAccess(ui, options) {
         default:
             body = [
                 ...flags,
+                ...policyWarnings,
                 heading('ACTIONS  (asked of the permission system, nothing was run)'),
                 ...access.probes.map((probe) => row(`access-probe-${probe.key}`, `${VERDICT_MARKS[probe.verdict]} ${probe.label}${probe.isRisky ? ' ⚠' : ''}`, VERDICT_LABELS[probe.verdict], probe.isRisky && probe.verdict === 'allow' ? WARN : VERDICT_COLORS[probe.verdict])),
                 Text({ children: ['● runs without asking   ◐ asks you first   ○ blocked'], dimColor: true }),

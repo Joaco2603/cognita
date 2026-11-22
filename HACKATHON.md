@@ -121,6 +121,25 @@ Registrarlo en la sección siguiente para la entrega.
   - Intro nueva que explica para qué sirve Cognita antes de la grabación: qué carga Claude Code al arrancar (plugins, skills, servidores MCP, reglas de permisos) y las tres capacidades (qué carga, qué puede hacer, qué está haciendo). El cierre repite las capacidades, los comandos (`/cognita`, `/cognita access`, `/cognita trim`) y cómo instalarlo.
   - Cámara con zooms y paneos sobre lo que se narra, y recuadros dibujados a mano con etiqueta (componente `hw-box-label` del registry de HyperFrames) sobre tokens, la acción riesgosa, la regla deny, el bloqueo y el plan de trim. Chips de capítulo abajo a la izquierda.
   - Guion en español revisado: "palanca" se reemplazó por "el mayor ahorro". Ambos videos duran ~96 s.
+
+- **2026-11-21 · Lazy MCP: los servidores que no se usan no cargan (v0.8.0).**
+  - `/cognita hold <server>`: el servidor deja de cargar al iniciar las sesiones de este proyecto. `/cognita connect` (o `c` en el panel) lo trae de vuelta en medio de la sesión, y `/cognita release` lo deja cargar siempre.
+  - Usa el hook `mcp.connect` del engine: no toca archivos de settings y `/mcp` lo muestra como retenido por Cognita. Por defecto no retiene nada.
+  - Sugerencias: un servidor que cargó en 3 sesiones del proyecto sin una sola llamada aparece como candidato. El plan de recorte ahora propone `/cognita hold` en vez de `/mcp`. Los comandos también responden por el alias `/inspector`.
+  - Probado en sesiones reales: retener `context7` y `vercel` bajó la base de 55,849 a 55,000 tokens; retener todos los servidores, de 55,505 a 52,861. Con tool search activo, el ahorro son sobre todo las instrucciones de cada servidor.
+  - Hecho con ruteo de modelos: opus planificó, haiku mapeó el código y sonnet implementó. Grafo de graphify actualizado y skill `repo-graph-routing` agregada al proyecto.
+  - Tests: 35 de UI y 48 unitarios, todos en verde.
+
+
+- **2026-11-22 · Cognita para equipos: policy, supply chain, costo y CI (v0.9.0).**
+  - `.cognita.json` en el repo: presupuesto, alerta y veredicto mínimo por acción ("leer `.env` tiene que pedir permiso"), compartido por todo el equipo. Gana sobre las variables de entorno; Access marca cada violación y un archivo inválido es un aviso, nunca un crash.
+  - Access más profundo: acciones propias del equipo (`terraform apply`), cada tool MCP consultada al sistema de permisos sin ejecutarla, y reglas allow demasiado amplias (`Bash(*)`, un servidor MCP entero) con el archivo que las define.
+  - `/cognita supply`: cada hook y servidor MCP, de dónde viene y si está fijado a una versión (`npx paquete@latest` sin versión queda marcado).
+  - `/cognita cost`: costo real en dólares por proyecto, por día y por sesión; columna `$` en `/cognita history`; presupuesto mensual con `CLAUDE_INSPECTOR_SPEND_BUDGET`.
+  - `/cognita doctor` y chequeo de compatibilidad al cargar: si Claude Code no tiene una API del motor, un toast dice qué función queda apagada. CI en GitHub Actions (Linux, macOS, Windows) contra la última versión de Claude Code, también semanal. `CHANGELOG.md` de 0.1.0 a 0.9.0.
+  - Hecho con 4 subagentes en paralelo (sonnet, un worktree cada uno) y merge en la sesión principal. Probado en sesión real: "Policy: Run shell commands must be blocked; it asks first.", tools MCP por servidor, `/cognita doctor` con 20 APIs OK.
+  - Tests: 87 unitarios y 35 de UI, todos en verde; `claude plugin validate` en verde.
+
 ## Cómo usamos AI coding
 
 - **Herramienta:** Claude Code (CLI) en todo el ciclo: diseño, implementación en TypeScript, tests, documentación y pruebas funcionales.

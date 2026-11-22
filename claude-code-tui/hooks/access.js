@@ -2,6 +2,7 @@
 // its tools, what the permission system answers for common risky actions,
 // the permission rules by settings source, the hooks and plugins that run.
 // No engine calls here, so it is unit-tested directly.
+import { policyViolations as checkPolicy } from './policy.js';
 import { joinPath } from './utils.js';
 export const PROBES = [
     { key: 'shell', label: 'Run shell commands', tool: 'Bash', isRisky: false, input: () => ({ command: 'npm test' }) },
@@ -21,6 +22,55 @@ const SOURCE_LABELS = {
     flag: 'command line (--settings)',
     policy: 'managed policy',
 };
+/** How many MCP tools are asked about; the rest are reported as not checked. */
+export const MCP_PROBE_LIMIT = 300;
+const BROAD_BASH = /^Bash(\((\*|:\*)?\))?$/;
+const BROAD_FILE = /^(Write|Edit)(\((\*\*?)?\))?$/;
+/** Allow rules that cover every command, every file write or a whole MCP server. */
+export function findBroadRules(rules) {
+    const found = [];
+    for (const set of rules) {
+        for (const raw of set.allow) {
+            const rule = raw.trim();
+            let why;
+            if (BROAD_BASH.test(rule))
+                why = 'allows any shell command';
+            else if (BROAD_FILE.test(rule))
+                why = `allows ${rule.startsWith('Write') ? 'writing' : 'editing'} any file`;
+            else if (rule.startsWith('mcp__')) {
+                const rest = rule.slice(5).replace(/__\*$/, '');
+                if (rest && !rest.includes('__'))
+                    why = 'allows every tool of the MCP server';
+            }
+            if (why)
+                found.push({ rule, source: set.source, label: set.label, why });
+        }
+    }
+    return found;
+}
+function groupMcpAccess(probes) {
+    const groups = new Map();
+    for (const probe of probes) {
+        const server = serverOf(probe.name) ?? 'mcp';
+        const group = groups.get(server) ?? { server, checked: 0, allowed: [], asked: 0, denied: 0, unknown: 0 };
+        if (probe.verdict === 'allow') {
+            group.checked += 1;
+            group.allowed.push(probe.name.slice(`mcp__${server}__`.length));
+        }
+        else if (probe.verdict === 'ask') {
+            group.checked += 1;
+            group.asked += 1;
+        }
+        else if (probe.verdict === 'deny') {
+            group.checked += 1;
+            group.denied += 1;
+        }
+        else
+            group.unknown += 1;
+        groups.set(server, group);
+    }
+    return [...groups.values()].sort((left, right) => right.allowed.length - left.allowed.length || left.server.localeCompare(right.server));
+}
 /** Splits `mcp__server__tool` into its server; undefined for a built-in. */
 function serverOf(name) {
     const match = /^mcp__(.+?)__/.exec(name);
@@ -109,6 +159,10 @@ export function analyzeAccess(input) {
         commandMap.set(source, group);
     }
     const commands = [...commandMap.values()].sort((left, right) => right.count - left.count || left.source.localeCompare(right.source));
+    const mcpAccess = groupMcpAccess(input.mcpProbes ?? []);
+    const mcpSkipped = Math.max(0, input.mcpSkipped ?? 0);
+    const broadRules = findBroadRules(rules);
+    const policyViolations = input.policy ? checkPolicy(input.policy, input.probes) : [];
     const hookCount = hooks.reduce((total, group) => total + group.count, 0);
     return {
         model: input.model ?? 'unknown model',
@@ -125,16 +179,38 @@ export function analyzeAccess(input) {
         plugins,
         commands,
         commandCount: input.commands.length,
-        flags: findFlags(input.probes, defaultMode, hookCount),
+        mcpAccess,
+        mcpSkipped,
+        broadRules,
+        policyViolations,
+        policyWarnings: input.policyWarnings ?? [],
+        flags: findFlags(input.probes, defaultMode, hookCount, policyViolations, mcpAccess, mcpSkipped, broadRules),
     };
 }
-function findFlags(probes, defaultMode, hookCount) {
-    const flags = [];
+function findFlags(probes, defaultMode, hookCount, violations, mcpAccess, mcpSkipped, broadRules) {
+    const flags = [...violations];
     if (defaultMode === 'bypassPermissions')
         flags.push('Permission mode is bypassPermissions: every tool runs without asking.');
     const unattended = probes.filter((probe) => probe.isRisky && probe.verdict === 'allow');
     if (unattended.length > 0) {
         flags.push(`${unattended.length} risky action(s) run without asking: ${unattended.map((probe) => probe.label.toLowerCase()).join(', ')}.`);
+    }
+    // A check that failed says nothing, so it must never read as "all clear".
+    const unchecked = probes.filter((probe) => probe.isRisky && probe.verdict === 'unknown');
+    if (unchecked.length > 0) {
+        flags.push(`${unchecked.length} risky action(s) could not be checked: ${unchecked.map((probe) => probe.label.toLowerCase()).join(', ')}.`);
+    }
+    const mcpUnchecked = mcpAccess.reduce((total, server) => total + server.unknown, 0);
+    if (mcpUnchecked > 0)
+        flags.push(`${mcpUnchecked} MCP tool(s) could not be checked.`);
+    if (mcpSkipped > 0)
+        flags.push(`${mcpSkipped} MCP tools not checked (limit ${MCP_PROBE_LIMIT}).`);
+    for (const server of mcpAccess.filter((item) => item.allowed.length > 0)) {
+        const names = server.allowed.slice(0, 5).join(', ');
+        flags.push(`MCP server ${server.server}: ${server.allowed.length} of ${server.checked} tool(s) run without asking (${names}${server.allowed.length > 5 ? ', …' : ''}).`);
+    }
+    if (broadRules.length > 0) {
+        flags.push(`${broadRules.length} allow rule(s) are too broad: ${broadRules.slice(0, 4).map((item) => `\`${item.rule}\` (${item.source})`).join(', ')}${broadRules.length > 4 ? ', …' : ''}.`);
     }
     if (hookCount > 0)
         flags.push(`${hookCount} hook command(s) from your settings run on your machine during the session.`);
@@ -158,7 +234,7 @@ export const VERDICT_MARKS = {
     unknown: '?',
 };
 const ACCESS_ROWS = 15;
-function table(headers, rows) {
+export function table(headers, rows) {
     const escape = (cell) => cell.replaceAll('|', '\\|');
     if (rows.length === 0)
         return ['_None._'];
@@ -168,7 +244,7 @@ function table(headers, rows) {
         ...rows.map((row) => `| ${row.map(escape).join(' | ')} |`),
     ];
 }
-function capped(items, limit = ACCESS_ROWS) {
+export function capped(items, limit = ACCESS_ROWS) {
     return { shown: items.slice(0, limit), rest: Math.max(0, items.length - limit) };
 }
 /** The access report as Markdown, for `/cognita access`. */
@@ -186,6 +262,7 @@ export function formatAccess(report) {
         ...(report.flags.length === 0
             ? ['No risky action runs without asking.']
             : report.flags.map((flag) => `- **${flag}**`)),
+        ...report.policyWarnings.map((warning) => `- _${warning}_`),
         '',
         '### Actions (asked of the permission system, nothing was run)',
         '',
@@ -202,6 +279,20 @@ export function formatAccess(report) {
         '',
         ...table(['MCP server', 'Tools'], mcp.shown.map((server) => [server.server, String(server.tools)])),
         ...(mcp.rest > 0 ? ['', `…and ${mcp.rest} more server(s).`] : []),
+        ...(report.mcpAccess.length > 0
+            ? [
+                '',
+                '#### MCP tools asked of the permission system (nothing was run)',
+                '',
+                ...table(['MCP server', 'Run without asking', 'Ask', 'Blocked', 'Not checked'], capped(report.mcpAccess).shown.map((server) => [
+                    server.server,
+                    server.allowed.length === 0 ? '0' : `${server.allowed.length}: ${server.allowed.slice(0, 6).map((name) => `\`${name}\``).join(', ')}${server.allowed.length > 6 ? ', …' : ''}`,
+                    String(server.asked),
+                    String(server.denied),
+                    String(server.unknown),
+                ])),
+            ]
+            : []),
         '',
         '### Permission rules by source',
         '',
@@ -209,6 +300,9 @@ export function formatAccess(report) {
         ...ruleLines('Allowed without asking', report.rules.flatMap((rules) => rules.allow)),
         ...ruleLines('Always asks', report.rules.flatMap((rules) => rules.ask)),
         ...ruleLines('Denied', report.rules.flatMap((rules) => rules.deny)),
+        ...(report.broadRules.length > 0
+            ? ['', 'Too broad:', ...report.broadRules.map((item) => `- \`${item.rule}\` in ${item.label} ${item.why}`)]
+            : []),
         ...(report.additionalDirectories.length > 0
             ? ['', `Extra directories it can reach: ${report.additionalDirectories.map((directory) => `\`${directory}\``).join(', ')}`]
             : []),

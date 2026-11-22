@@ -1,5 +1,7 @@
 # Cognita
 
+[![CI](https://github.com/Joaco2603/cognita/actions/workflows/ci.yml/badge.svg)](https://github.com/Joaco2603/cognita/actions/workflows/ci.yml) · [Changelog](./CHANGELOG.md)
+
 **See everything your Claude Code agent has access to.** Cognita is a Claude Code plugin that answers two questions inside the session you are already in:
 
 1. **What has my agent loaded?** What fills the context window before you type: CLAUDE.md files, MCP servers, skills, system prompt sections. What it never uses, and the exact commands to trim it.
@@ -36,10 +38,16 @@ Start a new Claude Code session and run `/cognita`. If a session is already runn
 | `/cognita` | Open the Cognita pane on the Overview |
 | `/cognita access` | Print what the agent can reach and do, as Markdown |
 | `/cognita access json` | The same as JSON, for scripts and CI |
+| `/cognita supply` | List every hook and MCP server that runs code here and whether it is pinned to a version (add `json` for scripts) |
 | `/cognita report` | Print what this session loaded into context (estimated; add `full` for an exact count, `json` for scripts) |
 | `/cognita trim` | A step-by-step plan, with commands, to shrink what loads before the first message |
 | `/cognita history` | The loadout over the last 20 sessions in this project, with a sparkline |
+| `/cognita cost` | What sessions cost in dollars in this project: total, per day, per session (`json` for scripts) |
 | `/cognita context`, `/cognita access open`, `/cognita agents` | Open the pane on that view |
+| `/cognita hold <server>` | Keep an MCP server off from the next session in this project; with no name, list what is held and suggest idle servers |
+| `/cognita connect [server]` | Bring a held server back for this session; with no name, every server held now |
+| `/cognita release <server\|all>` | Stop holding it, so it loads at every start again |
+| `/cognita doctor` | Which Claude Code engine APIs Cognita needs, which this version lacks, and the Claude Code version |
 | `/cognita help` | List the subcommands |
 
 `/inspector` is an alias of `/cognita`, kept for earlier versions.
@@ -79,6 +87,7 @@ Every view has its key hints on its last line. The keys:
 | `Esc` | everywhere | Close the pane |
 | `o` `m` `p` `s` `y` | Context | Subviews: Overview, Files, MCP, Skills, Prompt |
 | `x` | Context | Exact count (asks Claude Code for a full breakdown) |
+| `c` | Context, MCP | Connect the servers held in this session |
 | `a` `t` `u` `k` | Access | Subviews: Actions, Tools, Rules, Hooks & plugins |
 
 ## What each view shows
@@ -96,6 +105,7 @@ One screen with the three answers: how full the window is and how much of it is 
 - **Prompt.** Every section of the last composed system prompt, including the ones *other plugins* inject (`<plugin>:<name>` ids).
 - **Loaded but unused.** MCP servers and skills that cost tokens but were never used this session.
 - **Biggest levers.** The few changes that free the most context, such as `Disable plugin cloudflare (16 skills, none used): frees ~1,080 tokens`.
+- **Lazy MCP.** `/cognita hold context7` keeps an MCP server off from the next session in this project, and `/cognita connect context7` brings it back any time, mid-session, with no restart. The MCP view has the same buttons, and after a few sessions of a server being loaded and never called, Cognita suggests holding it. Holding is per project, never disconnects a server in the current session, and falls back to connecting everything if anything goes wrong.
 - **Since last session.** Each measurement is saved per project. The next session shows what changed (`MCP server linear: added, 3,000 tokens`), so context creep is caught early.
 
 ### Access: what the agent can do
@@ -113,7 +123,9 @@ One screen with the three answers: how full the window is and how much of it is 
   | ⚠ Read SSH keys | `Read: ~/.ssh/id_rsa` |
   | ⚠ Write outside the project | `Write: ~/.bashrc` |
 
-- **Tools.** Built-in tools, and MCP tools grouped by server.
+- **Your own actions.** Actions declared in [`.cognita.json`](#cognitajson-the-team-policy), such as `terraform apply` or `kubectl delete`, are asked of the permission system the same way.
+- **Tools.** Built-in tools, and MCP tools grouped by server. Every loaded MCP tool is also asked, with an empty input and nothing run, and each server shows how many of its tools run without asking (capped at 300 tools, best effort).
+- **Too broad.** Allow rules that grant far more than one command are flagged with the settings source that defines them: `Bash`, `Bash(*)`, `Bash(:*)`, `Write`/`Edit` with no pattern, `*` or `**`, and whole-server rules (`mcp__server`, `mcp__server__*`).
 - **Rules.** Allow, ask and deny rules by settings source (user, project, local, flag, policy), the permission mode and extra directories.
 - **Hooks & plugins.** Hook commands from your settings by event (they run on your machine during the session), and the plugins that are enabled.
 - **Warnings first.** `bypassPermissions` mode, risky actions that run without asking, and hook commands are flagged at the top.
@@ -152,11 +164,37 @@ The fix for that finding is one line in `.claude/settings.json`: `"permissions":
 
 The subagents of this session, running and finished, with their token use. Open one for its details, or start a new background agent in the project.
 
+## Supply chain
+
+`/cognita supply` (also `/inspector supply`, and `json` for scripts) answers: what code runs on my machine because of my Claude Code setup, and can it change without me noticing?
+
+It lists every hook command (event, matcher, command, settings source) and every MCP server (transport, command or URL, origin), and marks each one:
+
+| Mark | Meaning |
+| --- | --- |
+| `⚠ unpinned` | Fetches code fresh: `npx`, `bunx`, `pnpm dlx`, `yarn dlx`, `uvx` or `pipx run` without an exact version, any `@latest`, `docker run` with no tag or with `:latest`, or `curl ... \| sh` |
+| `● pinned` | An exact version (`pkg@1.2.3`, `pkg==1.2.3`), an image tag or a digest (`image@sha256:...`) |
+| `○ local` | A local path or script |
+| `↗ remote` | An http(s) URL; its code can change on the server's side |
+
+The top line counts the unpinned commands: "N unpinned command(s) download code that can change without notice." Plugins are listed with their marketplace and where that marketplace comes from.
+
+Best effort: the plugin API exposes settings and the tool list, not the hooks or MCP configs that plugins bring, so those servers show as "config not readable" and the report says what it could not read. A project `.mcp.json` is noticed but cannot be read (the API lists files, it does not read them). Cognita never changes your settings.
+
 ## Commands for scripts
 
 - `/cognita report json` and `/cognita access json` print the same data as JSON.
 - `/cognita trim` prints the exact command for each step, such as `claude plugin disable cloudflare --scope local` (this project only, with the undo command).
 - Set `CLAUDE_INSPECTOR_BUDGET=30k` and the report says whether what loads before the first message fits.
+
+## Cost
+
+Claude Code reports what the session has cost in USD. Cognita keeps the highest value seen for each session, with its local day, in the plugin's own store per project (the last 200 sessions). Writes happen only when the cost grows by a cent.
+
+- `/cognita cost` shows the project total, the last 14 days with a sparkline, the last 20 sessions, the average per session and this session so far. `/cognita cost json` prints the same data for scripts.
+- `/cognita history` adds a `$` column per session and a line such as `Spend: $12.40 in 9 sessions · today $1.10`.
+- Set `CLAUDE_INSPECTOR_SPEND_BUDGET=50` (USD per month) to see the share used this month in `/cognita cost`, and a startup toast when the month is over it.
+- If your Claude Code version does not report a cost, `/cognita cost` says so and nothing else changes.
 
 ## Status line and startup check
 
@@ -165,12 +203,35 @@ The subagents of this session, running and finished, with their token use. Open 
 
 ## Configuration
 
+Variables are the per-machine fallback; a `.cognita.json` in the project wins.
+
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `CLAUDE_INSPECTOR_BUDGET` | none | Tokens that may load before the first message, such as `30000`, `30k` or `1.5M` |
 | `CLAUDE_INSPECTOR_ALERT` | `2000` | Growth since the last session that raises a startup toast; `0` turns growth alerts off |
+| `CLAUDE_INSPECTOR_SPEND_BUDGET` | none | Monthly spend in USD, such as `50`; `/cognita cost` shows the share used and a startup toast warns when over |
 | `CLAUDE_INSPECTOR_STARTUP_CHECK` | on | Set it to `0` to skip the background measurement at session start |
 | `CLAUDE_INSPECTOR_STATUSLINE` | on | Set it to `0` to keep the status line untouched |
+
+### `.cognita.json`: the team policy
+
+Commit a `.cognita.json` at the project root so everyone uses the same rules, like an `.editorconfig`. It is read when the session starts, from the session's working directory.
+
+```json
+{
+  "budget": "30k",
+  "alert": 1500,
+  "require": { "env": "ask", "delete": "deny" },
+  "actions": [
+    { "key": "tf", "label": "Terraform apply", "tool": "Bash", "input": { "command": "terraform apply" }, "risky": true }
+  ]
+}
+```
+
+- `budget` and `alert` take a number or a string such as `"30k"`. They win over `CLAUDE_INSPECTOR_BUDGET` and `CLAUDE_INSPECTOR_ALERT`, which stay as the per-machine fallback.
+- `require` maps an action key to the verdict it must have at least: `allow`, `ask` or `deny` (stricter wins). Keys are the built-in ones (`shell`, `edit`, `web`, `push`, `delete`, `env`, `ssh`, `outside`) or your own. An action that is less strict is listed as a violation: `Policy: Read .env secrets must ask; it runs without asking.`
+- `actions` adds probes: `key`, `tool` and `input` are required, `label` and `risky` optional. A key may not reuse a built-in one.
+- An invalid file never breaks Cognita: it is ignored and the problem shows as a warning in `/cognita access` and the Overview. Cognita only reads this file; it never writes settings.
 
 ## Privacy and safety
 
@@ -191,7 +252,8 @@ npm run validate   # claude plugin validate .
 
 | Path | Role |
 | --- | --- |
-| `src/register.ts` | The hooks module: the `/cognita` command, the pane, and the observe-only hooks |
+| `src/register.ts` | The hooks module: the `/cognita` command, the pane, the observe-only hooks and the `mcp.connect` hold hook |
+| `src/lazy-mcp.ts` | Lazy MCP: the `mcp.connect` hold hook, the hold list in the store, and the `hold`, `connect` and `release` commands |
 | `src/loadout.ts` | Context analysis: groups the breakdown, joins it with usage, finds idle items, formats the reports |
 | `src/access.ts` | Access analysis: sample actions, tools by server, rules, hooks, plugins, commands, warnings |
 | `src/dashboard-view.ts` | The sidebar and the Overview |
@@ -202,6 +264,10 @@ npm run validate   # claude plugin validate .
 
 ## Limits and troubleshooting
 
+- **How much holding saves.** It removes a server's tools from the context at startup. Measured here with tool search on, holding all 9 servers took the loadout from 55,505 to 52,861 tokens (about 2.6k), because deferred tools already cost little. Without tool search the saving is larger.
+- **Undo everything.** `/cognita release all` un-holds every server in the project, and the next session loads them again.
+- **`/mcp` shows a held server as held by Cognita**, and a reconnect from `/mcp` is held too: use `/cognita connect <server>` instead.
+- **Held per project folder.** A subfolder of a project is a different project with its own hold list.
 - **Sample actions are samples.** A verdict is what the permission system answers for that exact call. A rule for a narrower command (`Bash(git push origin main)`) can still differ.
 - **Session scope.** Usage counts start when the plugin loads and cover only this session. Agents started in other sessions do not appear.
 - **"Unused" is a hint.** It means no calls in this session so far. Measure after real work, not right at startup.

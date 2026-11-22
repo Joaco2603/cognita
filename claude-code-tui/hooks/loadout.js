@@ -130,7 +130,7 @@ export function findLevers(mcpServers, skillGroups, memoryFiles, limit = 5) {
             key: `mcp-${server.server}`,
             kind: 'mcp',
             target: server.server,
-            text: `Disable MCP server ${code(server.server)} for this project (${plural(server.loadedTools, 'loaded tool')}, no calls)`,
+            text: `Hold MCP server ${code(server.server)} for this project (${plural(server.loadedTools, 'loaded tool')}, no calls)`,
             tokens: server.tokens,
         })),
         ...skillGroups
@@ -339,7 +339,9 @@ export function sparkline(values) {
 }
 const signed = (tokens) => (tokens > 0 ? '+' : tokens < 0 ? '-' : '±') + Math.abs(tokens).toLocaleString('en-US');
 /** Markdown for `/inspector history`: how the loadout moved across this project's sessions. */
-export function formatHistory(trend, currentSessionId, budget) {
+export function formatHistory(trend, currentSessionId, budget, 
+/** Cost in USD per session id, plus an optional summary line; adds a `$` column. */
+costs, spend) {
     if (trend.length === 0)
         return 'No measurements saved for this project yet.';
     const values = trend.map((point) => point.baseTokens);
@@ -360,11 +362,14 @@ export function formatHistory(trend, currentSessionId, budget) {
         const over = trend.filter((point) => point.baseTokens > budget).length;
         lines.push(`**Budget:** ${over} of ${trend.length} sessions went over ${budget.toLocaleString('en-US')} tokens.`, '');
     }
-    lines.push('| When | Model | Tokens | Change |', '| --- | --- | ---: | ---: |');
+    if (spend && costs)
+        lines.push(`**${spend}**`, '');
+    lines.push(costs ? '| When | Model | Tokens | Change | $ |' : '| When | Model | Tokens | Change |', costs ? '| --- | --- | ---: | ---: | ---: |' : '| --- | --- | ---: | ---: |');
     const rows = trend.map((point, index) => {
         const change = index === 0 ? '' : signed(point.baseTokens - trend[index - 1].baseTokens);
         const when = formatWhen(point.at) + (point.sessionId === currentSessionId ? ' (this session)' : '');
-        return `| ${when} | ${point.model || 'unknown'} | ${point.baseTokens.toLocaleString('en-US')} | ${change} |`;
+        const cost = costs ? ` ${point.sessionId in costs ? '$' + costs[point.sessionId].toFixed(2) : ''} |` : '';
+        return `| ${when} | ${point.model || 'unknown'} | ${point.baseTokens.toLocaleString('en-US')} | ${change} |${cost}`;
     });
     lines.push(...rows.reverse());
     return lines.join('\n');
@@ -494,7 +499,12 @@ function leverSteps(lever) {
         ];
     }
     if (lever.kind === 'mcp') {
-        return [`   Run \`/mcp\`, pick \`${lever.target}\` and choose **Disable**. It stays configured, and you can enable it again there.`];
+        return [
+            '   ```',
+            `   /cognita hold ${lever.target}`,
+            '   ```',
+            `   From the next session in this project; \`/cognita connect ${lever.target}\` brings it back any time.`,
+        ];
     }
     return [`   Open \`${lever.target}\` and move the sections you rarely need into a skill, which loads only when used.`];
 }

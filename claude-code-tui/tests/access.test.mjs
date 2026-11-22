@@ -103,3 +103,86 @@ test('probe inputs point at the project and the home folder', () => {
   assert.equal(PROBES.find((item) => item.key === 'ssh').input(paths).file_path, 'C:\\Users\\me\\.ssh\\id_rsa')
   assert.equal(PROBES.find((item) => item.key === 'outside').input({ cwd: '/r', home: '/home/me' }).file_path, '/home/me/.bashrc')
 })
+
+test('the 8 built-in samples are unchanged and no policy means no policy section', () => {
+  assert.deepEqual(PROBES.map((item) => item.key), ['shell', 'edit', 'web', 'push', 'delete', 'env', 'ssh', 'outside'])
+  const report = analyzeAccess(input)
+  assert.deepEqual(report.policyViolations, [])
+  assert.deepEqual(report.policyWarnings, [])
+  assert.equal(report.flags.some((flag) => flag.startsWith('Policy')), false)
+})
+
+test('policy violations show up in the report, the flags and the Markdown', () => {
+  const report = analyzeAccess({
+    ...input,
+    probes: [probe('env', 'allow')],
+    policy: { require: { env: 'ask' }, actions: [] },
+    policyWarnings: ['.cognita.json: bad'],
+  })
+  assert.deepEqual(report.policyViolations, ['Policy: Read .env secrets must ask; it runs without asking.'])
+  assert.ok(report.flags.includes(report.policyViolations[0]))
+  const text = formatAccess(report)
+  assert.match(text, /Policy: Read \.env secrets must ask/)
+  assert.match(text, /\.cognita\.json: bad/)
+})
+
+test('custom actions flow through as probes and are flagged when risky and allowed', () => {
+  const custom = { key: 'tf', label: 'Terraform apply', tool: 'Bash', isRisky: true, verdict: 'allow' }
+  const report = analyzeAccess({ ...input, probes: [...input.probes, custom] })
+  assert.ok(riskyAllowed(report).some((item) => item.key === 'tf'))
+})
+
+test('MCP tools are probed per server: which run without asking', () => {
+  const report = analyzeAccess({
+    ...input,
+    mcpProbes: [
+      { name: 'mcp__github__create_issue', verdict: 'allow' },
+      { name: 'mcp__github__list_prs', verdict: 'ask' },
+      { name: 'mcp__claude_ai_Gmail__send', verdict: 'unknown' },
+    ],
+  })
+  const github = report.mcpAccess.find((item) => item.server === 'github')
+  assert.deepEqual(github.allowed, ['create_issue'])
+  assert.equal(github.checked, 2)
+  assert.equal(report.mcpAccess.find((item) => item.server === 'claude_ai_Gmail').unknown, 1)
+  assert.ok(report.flags.some((flag) => flag.includes('github') && flag.includes('create_issue')))
+  assert.match(formatAccess(report), /github.*create_issue/)
+})
+
+test('too-broad allow rules are flagged with their source', () => {
+  const report = analyzeAccess({
+    ...input,
+    settings: {
+      user: { permissions: { allow: ['Bash', 'Bash(*)', 'Bash(:*)', 'Bash(git push:*)', 'Write(**)', 'Edit(*)', 'Read(*)', 'mcp__github', 'mcp__slack__*', 'mcp__github__list_prs'] } },
+      project: { permissions: { allow: ['Write'] } },
+    },
+  })
+  const rules = report.broadRules.map((item) => `${item.source}:${item.rule}`)
+  assert.deepEqual(rules, ['user:Bash', 'user:Bash(*)', 'user:Bash(:*)', 'user:Write(**)', 'user:Edit(*)', 'user:mcp__github', 'user:mcp__slack__*', 'project:Write'])
+  assert.ok(report.flags.some((flag) => flag.includes('too broad')))
+  assert.match(formatAccess(report), /Bash\(\*\)/)
+})
+
+test('MCP tools past the probe limit are reported as not checked', () => {
+  const report = analyzeAccess({ tools: [], probes: [], settings: {}, commands: [], mcpSkipped: 12 })
+  assert.equal(report.mcpSkipped, 12)
+  assert.ok(report.flags.includes('12 MCP tools not checked (limit 300).'))
+  assert.match(formatAccess(report), /12 MCP tools not checked \(limit 300\)/)
+  assert.doesNotMatch(formatAccess(report), /No risky action runs without asking/)
+  assert.equal(analyzeAccess({ tools: [], probes: [], settings: {}, commands: [] }).mcpSkipped, 0)
+})
+
+test('a risky probe that could not be checked is flagged and never shows the all-clear', () => {
+  const report = analyzeAccess({
+    tools: [{ name: 'mcp__github__create_issue', mcp: true }],
+    probes: [probe('push', 'unknown'), probe('delete', 'unknown'), probe('env', 'ask'), probe('shell', 'unknown')],
+    mcpProbes: [{ name: 'mcp__github__create_issue', verdict: 'unknown' }],
+    settings: {},
+    commands: [],
+  })
+  assert.ok(report.flags.some((flag) => /^2 risky action\(s\) could not be checked/.test(flag)))
+  assert.ok(report.flags.some((flag) => /^1 MCP tool\(s\) could not be checked/.test(flag)))
+  const text = formatAccess(report)
+  assert.doesNotMatch(text, /No risky action runs without asking/)
+  assert.match(text, /2 risky action\(s\) could not be checked/)
+})

@@ -138,6 +138,15 @@ export function renderOverview(ui, options) {
                 children: [`mode ${access.defaultMode} · ${access.rules.reduce((total, rules) => total + rules.allow.length + rules.ask.length + rules.deny.length, 0)} permission rules · ${access.hookCount} hooks · ${access.plugins.filter((plugin) => plugin.isEnabled).length} plugins`],
                 dimColor: true,
             }),
+            access.policyViolations.length > 0
+                ? Text({ key: 'overview-policy', children: [`⚠ ${access.policyViolations.length} policy violation(s): ${access.policyViolations[0]}`], color: WARN, wrap: 'wrap' })
+                : null,
+            access.policyWarnings.length > 0
+                ? Text({ key: 'overview-policy-warning', children: [`⚠ ${access.policyWarnings[0]}`], color: WARN, wrap: 'wrap' })
+                : null,
+            access.broadRules.length > 0
+                ? Text({ key: 'overview-broad', children: [`⚠ ${access.broadRules.length} allow rule(s) too broad, such as ${access.broadRules[0].rule}`], color: WARN, wrap: 'wrap' })
+                : null,
             access.defaultMode === 'bypassPermissions'
                 ? Text({ key: 'overview-risk', children: ['⚠ bypassPermissions: every tool runs without asking'], color: ERROR })
                 : risky.length > 0
