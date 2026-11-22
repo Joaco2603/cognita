@@ -116,7 +116,15 @@ export function policyViolations(policy, probes) {
     const violations = [];
     for (const probe of probes) {
         const required = policy.require[probe.key];
-        if (!required || !(probe.verdict in STRICTNESS))
+        if (!required)
+            continue;
+        if (probe.verdict === 'unknown') {
+            // A failed check proves nothing, so it cannot pass a rule that asks for more than "allow".
+            if (required !== 'allow')
+                violations.push(`Policy: ${probe.label} must ${MUST[required]}; it could not be checked.`);
+            continue;
+        }
+        if (!(probe.verdict in STRICTNESS))
             continue;
         if (STRICTNESS[probe.verdict] < STRICTNESS[required]) {
             violations.push(`Policy: ${probe.label} must ${MUST[required]}; it ${ACTUAL[probe.verdict]}.`);

@@ -43,6 +43,20 @@ test('policyViolations: required verdict is a floor, stricter wins', () => {
   )
 })
 
+test('policyViolations: a probe that could not be checked is reported, a missing tool is skipped', () => {
+  const probes = [
+    { key: 'env', label: 'Read .env secrets', verdict: 'unknown' },
+    { key: 'delete', label: 'Delete files (rm -rf)', verdict: 'unknown' },
+    { key: 'push', label: 'Push to a git remote', verdict: 'unknown' },
+    { key: 'web', label: 'Fetch web pages', verdict: 'missing' },
+  ]
+  const policy = { require: { env: 'ask', delete: 'deny', push: 'allow', web: 'deny' }, actions: [] }
+  assert.deepEqual(policyViolations(policy, probes), [
+    'Policy: Read .env secrets must ask; it could not be checked.',
+    'Policy: Delete files (rm -rf) must be blocked; it could not be checked.',
+  ])
+})
+
 test('custom actions are validated and become probes', () => {
   const { policy, warnings } = parsePolicy(JSON.stringify({ actions: [
     { key: 'tf', label: 'Terraform apply', tool: 'Bash', input: { command: 'terraform apply' }, risky: true },
