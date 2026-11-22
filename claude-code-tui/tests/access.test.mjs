@@ -162,3 +162,18 @@ test('too-broad allow rules are flagged with their source', () => {
   assert.ok(report.flags.some((flag) => flag.includes('too broad')))
   assert.match(formatAccess(report), /Bash\(\*\)/)
 })
+
+test('a risky probe that could not be checked is flagged and never shows the all-clear', () => {
+  const report = analyzeAccess({
+    tools: [{ name: 'mcp__github__create_issue', mcp: true }],
+    probes: [probe('push', 'unknown'), probe('delete', 'unknown'), probe('env', 'ask'), probe('shell', 'unknown')],
+    mcpProbes: [{ name: 'mcp__github__create_issue', verdict: 'unknown' }],
+    settings: {},
+    commands: [],
+  })
+  assert.ok(report.flags.some((flag) => /^2 risky action\(s\) could not be checked/.test(flag)))
+  assert.ok(report.flags.some((flag) => /^1 MCP tool\(s\) could not be checked/.test(flag)))
+  const text = formatAccess(report)
+  assert.doesNotMatch(text, /No risky action runs without asking/)
+  assert.match(text, /2 risky action\(s\) could not be checked/)
+})

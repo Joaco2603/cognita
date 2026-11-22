@@ -191,6 +191,14 @@ function findFlags(probes, defaultMode, hookCount, violations, mcpAccess, broadR
     if (unattended.length > 0) {
         flags.push(`${unattended.length} risky action(s) run without asking: ${unattended.map((probe) => probe.label.toLowerCase()).join(', ')}.`);
     }
+    // A check that failed says nothing, so it must never read as "all clear".
+    const unchecked = probes.filter((probe) => probe.isRisky && probe.verdict === 'unknown');
+    if (unchecked.length > 0) {
+        flags.push(`${unchecked.length} risky action(s) could not be checked: ${unchecked.map((probe) => probe.label.toLowerCase()).join(', ')}.`);
+    }
+    const mcpUnchecked = mcpAccess.reduce((total, server) => total + server.unknown, 0);
+    if (mcpUnchecked > 0)
+        flags.push(`${mcpUnchecked} MCP tool(s) could not be checked.`);
     for (const server of mcpAccess.filter((item) => item.allowed.length > 0)) {
         const names = server.allowed.slice(0, 5).join(', ');
         flags.push(`MCP server ${server.server}: ${server.allowed.length} of ${server.checked} tool(s) run without asking (${names}${server.allowed.length > 5 ? ', …' : ''}).`);
