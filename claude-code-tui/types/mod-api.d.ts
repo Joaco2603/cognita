@@ -108,10 +108,26 @@ interface ModApi {
   command: {
     register: (options: { name: string; description: string }) => Promise<void>
     run: (options: { command: string; args?: string }) => Promise<{ text?: string }>
+    list: () => Promise<Array<{ name: string; description: string; source: string; plugin?: string }>>
+  }
+  tool: {
+    list: () => Promise<Array<{ name: string; description: string; mcp: boolean }>>
+    /** Asks the permission system what it would answer; runs nothing. */
+    check: (input: { tool: string; input: unknown }) => Promise<{
+      decision: 'allow' | 'ask' | 'deny'
+      reason?: string
+      rule?: string
+    }>
+  }
+  settings: {
+    read: (args?: { source?: 'user' | 'project' | 'local' | 'flag' | 'policy' }) => Promise<unknown>
   }
   session: {
     usage: (args?: { breakdown?: 'summary' | 'full'; columns?: number }) => Promise<SessionUsage>
     id: () => Promise<string>
+    model: () => Promise<string>
+    version: () => Promise<{ version: string; base?: string }>
+    info: () => Promise<{ platform?: string; [field: string]: unknown }>
     /** The project folder the session started in. */
     cwd: () => Promise<string>
   }
@@ -134,6 +150,10 @@ interface ModApi {
       title: string
       focus?: true
       closeOnEscape?: true
+      /** Width wanted while docked (capped at 45% of the terminal). */
+      columns?: number
+      /** Height wanted while inline above the prompt. */
+      rows?: number
     }) => Promise<{ isPlaced: boolean }>
     resolve: (event: ModEvent) => UiComponents
     invalidate: (event: 'ui.render') => void

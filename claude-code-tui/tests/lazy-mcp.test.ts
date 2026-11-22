@@ -1,9 +1,9 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 const pane = {
-  plugin: 'workspace-dashboard',
+  plugin: 'cognita',
   component: 'Pane',
-  requestId: 'workspace-dashboard',
+  requestId: 'cognita',
   viewport: { columns: 120, rows: 40 },
   props: {
     title: 'Claude Code',
@@ -53,13 +53,13 @@ function mockSession(on: any) {
 }
 
 const start = ($: any) => $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
-const inspector = async ($: any, args: string) => ((await $.command.run({ command: 'inspector', args })) as { text: string }).text
+const inspector = async ($: any, args: string) => ((await $.command.run({ command: 'cognita', args })) as { text: string }).text
 
-test('/inspector hold stores the server by key, says what it frees and refuses a repeat', async ($, on) => {
+test('/cognita hold stores the server by key, says what it frees and refuses a repeat', async ($, on) => {
   mock.store(on)
   mockSession(on)
   await start($)
-  await $.command.run({ command: 'inspector', args: 'report' })
+  await $.command.run({ command: 'cognita', args: 'report' })
 
   const text = await inspector($, 'hold PLUGIN_neon_NEON')
   expect(text).toContain('Held `plugin_neon_neon` for this project')
@@ -72,7 +72,7 @@ test('/inspector hold stores the server by key, says what it frees and refuses a
   expect(list).toContain('`plugin_neon_neon`: from next session')
 })
 
-test('/inspector release removes one server, and release all clears the list', async ($, on) => {
+test('/cognita release removes one server, and release all clears the list', async ($, on) => {
   mock.store(on, { 'held:/workspace': ['context7', 'github'] })
   mockSession(on)
   await start($)
@@ -84,7 +84,7 @@ test('/inspector release removes one server, and release all clears the list', a
   expect(await inspector($, 'hold')).toContain('Nothing held for this project.')
 })
 
-test('/inspector hold with nothing held says so', async ($, on) => {
+test('/cognita hold with nothing held says so', async ($, on) => {
   mock.store(on)
   mockSession(on)
   await start($)
@@ -96,7 +96,7 @@ test('the MCP view offers a hold button for idle servers and a section for held 
   mock.store(on, { 'held:/workspace': ['context7'] })
   mockSession(on)
   await start($)
-  await $.command.run({ command: 'inspector', args: '' })
+  await $.command.run({ command: 'cognita', args: '' })
   const ui = await $.ui.mount({ ...pane, surface: 'terminal' })
   await ui.press({ key: 'tab-context' })
   await ui.press({ key: 'context-menu-mcp' })
@@ -132,4 +132,16 @@ test('measuring counts a server as loaded once per session, and a call clears th
   await $.tool.call({ tool: 'mcp__github__create_issue', title: 'x' } as any)
   await new Promise((resolve) => setTimeout(resolve, 20))
   expect(await inspector($, 'hold')).not.toContain('Suggested')
+})
+
+test('/inspector is an alias: hold, connect and release work through it too', async ($, on) => {
+  mock.store(on)
+  mockSession(on)
+  await start($)
+  await $.command.run({ command: 'cognita', args: 'report' })
+
+  const legacy = async (args: string) => ((await $.command.run({ command: 'inspector', args })) as { text: string }).text
+  expect(await legacy('hold github')).toContain('Held `github`')
+  expect(await legacy('hold')).toContain('`github`')
+  expect(await legacy('release all')).toContain('Released `github`')
 })

@@ -1,9 +1,11 @@
 {
-  "name": "workspace-dashboard",
-  "displayName": "Workspace Dashboard",
-  "version": "0.7.0",
-  "description": "Measure what a Claude Code session has loaded into context (MCP servers, skills, CLAUDE.md, prompt sections) and flag what it never uses. Plus workspaces and agents.",
+  "name": "cognita",
+  "displayName": "Cognita",
+  "version": "0.8.0",
+  "description": "See everything your Claude Code agent has access to: what fills its context window (CLAUDE.md, MCP servers, skills, prompt sections), what it never uses, and what it can do (tools, risky actions that run without asking, permission rules, hooks, plugins).",
   "author": {
     "name": "Joaquin Pappa"
-  }
+  },
+  "license": "MIT",
+  "keywords": ["context", "permissions", "observability", "mcp", "tokens", "security"]
 }

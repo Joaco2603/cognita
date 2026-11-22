@@ -3,7 +3,7 @@ import type { McpServerLoad } from './loadout.js'
 /** Servers loaded in this many sessions here without a single call are worth holding. */
 export const HOLD_AFTER_SESSIONS = 3
 
-const HOLD_MESSAGE = 'Held for this project by Workspace Dashboard. Bring it back: /inspector connect <server>'
+const HOLD_MESSAGE = 'Held for this project by Cognita. Bring it back: /cognita connect <server>'
 
 export type HeldState = 'held now' | 'connected this session' | 'from next session'
 export type HeldView = { name: string; key: string; state: HeldState }
@@ -81,7 +81,7 @@ export function suggestions(usage: McpUsage | undefined, held: readonly string[]
     .sort((left, right) => right.sessions - left.sessions)
 }
 
-const isOwnServer = (key: string) => /(^|_)workspace-dashboard$/.test(key)
+const isOwnServer = (key: string) => /(^|_)cognita$/.test(key)
 const code = (text: string) => '`' + text + '`'
 
 /**
@@ -142,7 +142,7 @@ export function createLazyMcp() {
           connectedNow.add(key)
           lines.push(isReleased
             ? `Connected ${code(name)} now; its tools arrive with the next request.`
-            : `Connected ${code(name)} for this session; its tools arrive with the next request. It stays held at the next start: ${code(`/inspector release ${name}`)} loads it every time.`)
+            : `Connected ${code(name)} for this session; its tools arrive with the next request. It stays held at the next start: ${code(`/cognita release ${name}`)} loads it every time.`)
         } else {
           lines.push(`Could not connect ${code(name)}: ${result.message}`)
         }
@@ -200,12 +200,12 @@ export function createLazyMcp() {
       if (!match) return noMatch(input, servers)
       const key = serverKey(match)
       const name = nameOf(key) === key ? match : nameOf(key)
-      if (isOwnServer(key)) return 'Workspace Dashboard does not hold its own server.'
+      if (isOwnServer(key)) return 'Cognita does not hold its own server.'
       if (list.includes(key)) return `${code(name)} is already held for this project.`
       await io.set(`held:${dir}`, [...list, key])
       const tokens = servers.find((server) => serverKey(server.server) === key)?.tokens
       const frees = tokens ? ` (frees ~${tokens.toLocaleString('en-US')} tokens at each start)` : ''
-      return `Held ${code(name)} for this project: it stays off from the next session${frees}. Bring it back any time: ${code(`/inspector connect ${name}`)}.`
+      return `Held ${code(name)} for this project: it stays off from the next session${frees}. Bring it back any time: ${code(`/cognita connect ${name}`)}.`
     },
 
     async connect(io: LazyIo, input: string, servers: readonly McpServerLoad[] = []): Promise<string> {
@@ -219,7 +219,7 @@ export function createLazyMcp() {
     },
 
     async release(io: LazyIo, input: string, servers: readonly McpServerLoad[] = []): Promise<string> {
-      if (!input) return `Say which server to release, or ${code('/inspector release all')}.`
+      if (!input) return `Say which server to release, or ${code('/cognita release all')}.`
       const dir = await folder(io)
       const list = await readList(io)
       const keys = input.toLowerCase() === 'all'

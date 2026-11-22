@@ -65,7 +65,7 @@ Registrarlo en la sección siguiente para la entrega.
 - **2026-11-20 · Medición de lo que carga la sesión (v0.2.0).**
   - Nueva pestaña Context: medidor de la ventana, desglose por categoría, archivos CLAUDE.md/memoria, MCP servers (herramientas cargadas/diferidas y llamadas), skills, agentes y secciones del system prompt, incluidas las que inyectan otros plugins.
   - Sección "Loaded but unused": tokens gastados en MCP servers y skills que la sesión nunca usó.
-  - `/inspector report [full]` genera un reporte en Markdown; el status line muestra `ctx 42% · $0.31`.
+  - `/inspector report [full]` genera un reporte en Markdown; el status line muestra `ctx % · $costo`.
   - Hooks de solo observación (`tool.call`, `skill.prompt`, `prompt.compose`, `prompt.context`, `session.measure`) protegidos con `try/catch`.
   - Instalación de un paso vía `.claude-plugin/marketplace.json`; README del plugin con uso, configuración, desarrollo y troubleshooting.
   - Compatibilidad con Windows (rutas, descubrimiento de workspaces, tests). Tests: 18 de UI (`claude plugin test`) y 12 unitarios de Node, todos en verde.
@@ -96,21 +96,57 @@ Registrarlo en la sección siguiente para la entrega.
   - Verificado que `claude plugin disable cloudflare --scope local` resuelve `cloudflare@cloudflare` y solo escribe `.claude/settings.local.json` del proyecto; el comando para deshacer también funciona.
   - Sesión real: 33,828 tokens con presupuesto de 30k; el plan libera ~1,665 y avisa que sigue ~2,163 por encima.
   - Tests: 26 de UI y 29 unitarios, todos en verde.
-- **2026-11-21 · Lazy MCP: los servidores que no se usan no cargan (v0.7.0).**
-  - `/inspector hold <server>`: el servidor deja de cargar al iniciar las sesiones de este proyecto. `/inspector connect` (o `c` en el panel) lo trae de vuelta en medio de la sesión, y `/inspector release` lo deja cargar siempre.
-  - Usa el hook `mcp.connect` del engine: no toca archivos de settings y `/mcp` lo muestra como retenido por el plugin. Por defecto no retiene nada.
-  - Sugerencias: un servidor que cargó en 3 sesiones del proyecto sin una sola llamada aparece como candidato. El plan de recorte ahora propone `/inspector hold` en vez de `/mcp`.
+
+- **2026-11-21 · Cognita: qué puede hacer el agente (v0.7.0).**
+  - Rebrand a **Cognita** (plugin `cognita`, comando `/cognita`; `/inspector` queda como alias). Ícono del plugin y licencia MIT.
+  - Nueva vista **Access**: le pregunta al sistema de permisos de Claude Code qué respondería ante 8 acciones de muestra (shell, editar, web, git push, `rm -rf`, leer `.env`, leer llaves SSH, escribir fuera del proyecto) **sin ejecutar nada**, y marca las riesgosas que corren sin preguntar. También lista herramientas (built-in y MCP por servidor), reglas allow/ask/deny por origen, modo de permisos, hooks de settings y plugins.
+  - `/cognita access` y `/cognita access json`: el mismo análisis en Markdown o JSON.
+  - Nueva vista **Overview**: contexto, acceso y agentes en una sola pantalla, con advertencias primero. Barra lateral simplificada (proyecto, modelo, vistas 1–4) y línea de atajos al pie de cada vista. Se quitó la lista de workspaces, que no aportaba al objetivo.
+  - Probado en sesiones reales: `/cognita access` detectó "1 risky action runs without asking: read .env secrets" y 14 hooks; con `--settings` que agrega `deny: Read(./.env)` la fila pasa a "○ blocked". Instalación local probada desde cero (reemplaza la versión anterior `workspace-dashboard`).
+  - Bug real: el motor se negaba a cargar el módulo si `$` se pasaba a funciones internas; se reorganizó `register.ts` en funciones de nivel superior con un objeto de estado.
+  - Tests: 27 de UI y 37 unitarios, todos en verde; `claude plugin validate` en verde, también con `--profile directory`.
+
+- **2026-11-21 · Instalación multiplataforma y video demo.**
+  - Instalación desde el marketplace (`claude plugin marketplace add Joaco2603/cognita` + `claude plugin install cognita@cognita`) verificada; el README la pone primero.
+  - Linux probado desde cero en Docker (`node:22`, clon limpio de GitHub, Claude Code 2.1.330): build, 37 tests unitarios, 27 tests de UI (`claude plugin test`), `claude plugin validate`, `npm run install:local` e instalación desde el marketplace, todo en verde.
+  - Video demo de 77 s ([`demo/cognita-demo.mp4`](./demo/cognita-demo.mp4)), hecho con HyperFrames a partir de salida real del plugin: el problema, el Overview, `/cognita access` detectando `.env`, la regla que lo bloquea, `/cognita trim` y la instalación.
+  - Enlaces del README verificados (rutas locales y GitHub).
+
+- **2026-11-21 · Video demo en vivo, EN y ES (v0.7.1).**
+  - El video ahora es una **grabación real de pantalla**: una sesión de Claude Code en Windows Terminal donde se abre `/cognita`, se recorren Overview, Context, Access y Agents, se agrega en vivo la regla `deny: Read(./.env)`, Access la muestra bloqueada al re-chequear y `/cognita trim` arma el plan. Insignia "LIVE RECORDING" en pantalla.
+  - Dos versiones narradas con subtítulos: inglés ([`demo/cognita-demo-en.mp4`](./demo/cognita-demo-en.mp4)) y español ([`demo/cognita-demo-es.mp4`](./demo/cognita-demo-es.mp4)). Voz local con Kokoro (sin servicios pagos), música de fondo del catálogo de HeyGen, edición y zooms con HyperFrames (`demo/live/`, `node build.mjs en|es`).
+  - Arreglos de UI que salieron al grabar: el panel abre a 110×40, modo compacto con pestañas cuando el panel mide menos de 80 columnas, etiquetas de la barra lateral sin duplicados y valores de Access que ya no se cortan. Tests: 28 de UI y 37 unitarios, en verde.
+
+- **2026-11-21 · Video demo con más movimiento y propuesta clara.**
+  - Intro nueva que explica para qué sirve Cognita antes de la grabación: qué carga Claude Code al arrancar (plugins, skills, servidores MCP, reglas de permisos) y las tres capacidades (qué carga, qué puede hacer, qué está haciendo). El cierre repite las capacidades, los comandos (`/cognita`, `/cognita access`, `/cognita trim`) y cómo instalarlo.
+  - Cámara con zooms y paneos sobre lo que se narra, y recuadros dibujados a mano con etiqueta (componente `hw-box-label` del registry de HyperFrames) sobre tokens, la acción riesgosa, la regla deny, el bloqueo y el plan de trim. Chips de capítulo abajo a la izquierda.
+  - Guion en español revisado: "palanca" se reemplazó por "el mayor ahorro". Ambos videos duran ~96 s.
+
+- **2026-11-21 · Lazy MCP: los servidores que no se usan no cargan (v0.8.0).**
+  - `/cognita hold <server>`: el servidor deja de cargar al iniciar las sesiones de este proyecto. `/cognita connect` (o `c` en el panel) lo trae de vuelta en medio de la sesión, y `/cognita release` lo deja cargar siempre.
+  - Usa el hook `mcp.connect` del engine: no toca archivos de settings y `/mcp` lo muestra como retenido por Cognita. Por defecto no retiene nada.
+  - Sugerencias: un servidor que cargó en 3 sesiones del proyecto sin una sola llamada aparece como candidato. El plan de recorte ahora propone `/cognita hold` en vez de `/mcp`. Los comandos también responden por el alias `/inspector`.
   - Probado en sesiones reales: retener `context7` y `vercel` bajó la base de 55,849 a 55,000 tokens; retener todos los servidores, de 55,505 a 52,861. Con tool search activo, el ahorro son sobre todo las instrucciones de cada servidor.
   - Hecho con ruteo de modelos: opus planificó, haiku mapeó el código y sonnet implementó. Grafo de graphify actualizado y skill `repo-graph-routing` agregada al proyecto.
-  - Tests: 32 de UI y 40 unitarios, todos en verde.
+  - Tests: 35 de UI y 48 unitarios, todos en verde.
+
+
+## Cómo usamos AI coding
+
+- **Herramienta:** Claude Code (CLI) en todo el ciclo: diseño, implementación en TypeScript, tests, documentación y pruebas funcionales.
+- **Qué hizo el AI:** escribió la mayor parte del código (`src/*.ts`), los tests (`tests/`), los README y este registro, a partir de la dirección del equipo. Consultó los tipos del motor de plugins (`claude-code.d.ts`) para encontrar APIs como `$.tool.check` y `$.settings.read`, en las que se basa la vista Access.
+- **Qué hizo el equipo:** definió el producto (ver todo lo que el agente tiene cargado y lo que puede hacer), priorizó con los criterios de evaluación, revisó cada cambio y decidió qué entraba.
+- **Cómo se validó:** cada función se probó en sesiones reales con `claude -p "/cognita …" --plugin-dir ./claude-code-tui`, además de `npm test` y `claude plugin validate`. Esas pruebas encontraron bugs que los tests con mocks no veían (categorías diferidas que daban 163%, el módulo que el motor no cargaba).
+- **Trazabilidad:** un PR por versión (#8 a #13) con su descripción; cada entrada de arriba dice qué cambió y cómo se probó.
 
 ## Checklist de entrega
 
-- [ ] Nombre comercial y descripción de una línea pensada para el Marketplace
-- [ ] README con propuesta de valor, captura o GIF, instalación y troubleshooting
-- [ ] Instalación probada desde cero en Windows, macOS y Linux
-- [ ] `npm run build`, `npm test` y `npm run validate` en verde
-- [ ] Sección "Cómo usamos AI coding" en la entrega
-- [ ] Diferencia entre línea base y avance del hackathon documentada
-- [ ] Video demo corto (1 a 2 min)
-- [ ] Enlaces verificados; el capitán envía antes del dom 22 nov 23:59 UTC−6
+- [x] Nombre comercial y descripción de una línea pensada para el Marketplace
+- [x] README con propuesta de valor, salida real, instalación y troubleshooting (con video demo)
+- [x] Instalación probada desde cero en Windows y Linux (Docker `node:22`); macOS sin máquina para probar, el plugin no usa nada específico de plataforma
+- [x] `npm run build`, `npm test` y `npm run validate` en verde
+- [x] Sección "Cómo usamos AI coding" en la entrega
+- [x] Diferencia entre línea base y avance del hackathon documentada
+- [x] Video demo en vivo (~96 s, con voz, música, zooms y recuadros que explican las tres capacidades) en inglés y español: [`demo/cognita-demo-en.mp4`](./demo/cognita-demo-en.mp4), [`demo/cognita-demo-es.mp4`](./demo/cognita-demo-es.mp4)
+- [x] Enlaces verificados
+- [ ] El capitán envía antes del dom 22 nov 23:59 UTC−6

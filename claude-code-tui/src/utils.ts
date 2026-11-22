@@ -1,6 +1,7 @@
-export type DashboardTab = 'dashboard' | 'context' | 'agents'
+export type DashboardTab = 'overview' | 'context' | 'access' | 'agents'
 export type AgentSubview = 'active' | 'inactive' | 'detail' | 'launch'
 export type ContextSubview = 'overview' | 'memory' | 'mcp' | 'skills' | 'prompt'
+export type AccessSubview = 'actions' | 'tools' | 'rules' | 'hooks'
 
 export type Workspace = {
   name: string

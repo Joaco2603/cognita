@@ -1,7 +1,9 @@
+import { analyzeAccess, formatAccess, formatAccessJson, PROBES, SETTINGS_SOURCES, type AccessReport, type ProbeResult, type SettingsSourceName } from './access.js'
+import { renderAccess } from './access-view.js'
 import { renderAgents } from './agents-view.js'
 import { renderContext } from './context-view.js'
-import { renderDashboard, renderSidebar } from './dashboard-view.js'
-import { createLazyMcp, type LazyIo, type LazyMcp } from './lazy-mcp.js'
+import { renderOverview, renderSidebar, renderTabStrip } from './dashboard-view.js'
+import { createLazyMcp, type HeldView, type LazyIo, type LazyMcp } from './lazy-mcp.js'
 import {
   DEFAULT_GROWTH_ALERT,
   diffLoadout,
@@ -29,185 +31,503 @@ import {
 } from './loadout.js'
 import {
   basename,
-  dirname,
-  joinPath,
+  type AccessSubview,
   type AgentSubview,
   type ContextSubview,
   type DashboardTab,
   type Workspace,
 } from './utils.js'
 
-const PANE_ID = 'workspace-dashboard'
-const COMMAND_NAME = 'inspector'
+const PANE_ID = 'cognita'
+const COMMAND_NAME = 'cognita'
+/** The name earlier versions used; it keeps working. */
+const LEGACY_COMMAND_NAME = 'inspector'
 
 const HELP = [
-  '**/inspector** · Workspace Dashboard',
+  '**/cognita** · see what your agent has loaded and what it can do',
   '',
-  '- `/inspector`: open the dashboard pane',
-  '- `/inspector context`: open the pane on the context loadout',
-  '- `/inspector report`: print what this session has loaded (estimated)',
-  '- `/inspector report full`: same, with an exact token count',
-  '- `/inspector report json`: the same data as JSON, for scripts and CI (add `full` for exact counts)',
-  '- `/inspector history`: how the loadout changed across the last sessions in this project',
-  '- `/inspector trim`: a step-by-step plan, with commands, to shrink what loads before the first message',
-  '- `/inspector hold [server]`: keep an MCP server off from the next session in this project (no name lists the held ones)',
-  '- `/inspector connect [server]`: bring a held server back for this session (no name connects every held one)',
-  '- `/inspector release <server|all>`: stop holding it, so it loads at every start again',
-  '- `/inspector help`: this list',
+  '- `/cognita`: open the Cognita pane (Overview, Context, Access, Agents)',
+  '- `/cognita access`: what the agent can reach: tools, MCP servers, risky actions, permission rules, hooks, plugins',
+  '- `/cognita access json`: the same as JSON',
+  '- `/cognita report`: what this session has loaded into context (estimated; `full` for an exact count, `json` for scripts)',
+  '- `/cognita trim`: a step-by-step plan, with commands, to shrink what loads before the first message',
+  '- `/cognita history`: how the loadout changed across the last sessions in this project',
+  '- `/cognita context` · `/cognita access open`: open the pane on that view',
+  '- `/cognita hold [server]`: keep an MCP server off from the next session in this project (no name lists the held ones)',
+  '- `/cognita connect [server]`: bring a held server back for this session (no name connects every held one)',
+  '- `/cognita release <server|all>`: stop holding it, so it loads at every start again',
+  '- `/cognita help`: this list',
+  '',
+  '`/inspector` is an alias of `/cognita`.',
 ].join('\n')
 
-export function register(on: ModOn): void {
-  let activeTab: DashboardTab = 'dashboard'
-  let agentSubview: AgentSubview = 'active'
-  let contextSubview: ContextSubview = 'overview'
-  let currentDirectory = ''
-  let workspaces: Workspace[] = []
-  let selectedWorkspace = ''
-  let searchOpen = false
-  let searchValue = ''
-  let agentSearch = ''
-  let selectedAgentId = ''
-  let agentPrompt = ''
-  let sessionAgents: AgentInfo[] = []
-  let agentError = ''
-  let loadingAgents = false
-  let launchingAgent = false
-  let dashboardError = ''
-  let contextSnapshots: Array<{ capturedAt: string; text: string }> = []
-  let isStatusLineEnabled = true
-  let alerts: AlertSettings = { growth: DEFAULT_GROWTH_ALERT }
-
-  // Context loadout: measured on demand, plus what the hooks below observe.
-  const usageLog = emptyUsage()
-  const lazy = createLazyMcp()
-  let loadout: Loadout | undefined
-  let loadoutDetail: 'summary' | 'full' = 'summary'
-  let measuredAt = ''
-  let measuring = false
-  let contextError = ''
+/** Everything the pane and the commands share during one session. */
+type State = {
+  activeTab: DashboardTab
+  agentSubview: AgentSubview
+  contextSubview: ContextSubview
+  accessSubview: AccessSubview
+  currentDirectory: string
+  model: string
+  agentSearch: string
+  selectedAgentId: string
+  agentPrompt: string
+  sessionAgents: AgentInfo[]
+  agentError: string
+  loadingAgents: boolean
+  launchingAgent: boolean
+  isStatusLineEnabled: boolean
+  alerts: AlertSettings
+  // Context loadout: measured on demand, plus what the observe hooks record.
+  usageLog: UsageLog
+  loadout?: Loadout
+  loadoutDetail: 'summary' | 'full'
+  measuredAt: string
+  measuring: boolean
+  contextError: string
+  // Lazy MCP: servers held for this project, and what the pane last read of them.
+  lazy: LazyMcp
+  lazyView: { held: readonly HeldView[]; unusedSessions: Record<string, number> }
   /** The comparison with this project's previous session; undefined until known. */
-  let since: LoadoutDiff | 'first' | undefined
-  let promptSections: readonly PromptComposeSection[] = []
-  let promptBlocks: readonly PromptContextBlock[] = []
-  let instructionFiles: readonly InstructionFile[] = []
+  since?: LoadoutDiff | 'first'
+  promptSections: readonly PromptComposeSection[]
+  promptBlocks: readonly PromptContextBlock[]
+  instructionFiles: readonly InstructionFile[]
+  // Access: what the agent can reach and do, checked on demand.
+  access?: AccessReport
+  accessCheckedAt: string
+  checkingAccess: boolean
+  accessError: string
+}
 
-  const promptCapture = (): PromptCapture | undefined =>
-    promptSections.length > 0 || promptBlocks.length > 0
-      ? measurePrompt(promptSections, promptBlocks, instructionFiles)
-      : undefined
+function createState(): State {
+  return {
+    activeTab: 'overview',
+    agentSubview: 'active',
+    contextSubview: 'overview',
+    accessSubview: 'actions',
+    currentDirectory: '',
+    model: '',
+    agentSearch: '',
+    selectedAgentId: '',
+    agentPrompt: '',
+    sessionAgents: [],
+    agentError: '',
+    loadingAgents: false,
+    launchingAgent: false,
+    isStatusLineEnabled: true,
+    alerts: { growth: DEFAULT_GROWTH_ALERT },
+    usageLog: emptyUsage(),
+    loadoutDetail: 'summary',
+    measuredAt: '',
+    measuring: false,
+    contextError: '',
+    lazy: createLazyMcp(),
+    lazyView: { held: [], unusedSessions: {} },
+    promptSections: [],
+    promptBlocks: [],
+    instructionFiles: [],
+    accessCheckedAt: '',
+    checkingAccess: false,
+    accessError: '',
+  }
+}
 
-  const applyLoadout = (measured: Measured, detail: 'summary' | 'full'): Loadout => {
-    loadout = measured.loadout
-    since = measured.since ?? since
-    loadoutDetail = detail
-    measuredAt = new Date().toLocaleTimeString()
-    return measured.loadout
+function promptCapture(state: State): PromptCapture | undefined {
+  return state.promptSections.length > 0 || state.promptBlocks.length > 0
+    ? measurePrompt(state.promptSections, state.promptBlocks, state.instructionFiles)
+    : undefined
+}
+
+function applyLoadout(state: State, measured: Measured, detail: 'summary' | 'full'): Loadout {
+  state.loadout = measured.loadout
+  state.since = measured.since ?? state.since
+  state.loadoutDetail = detail
+  if (!state.model && measured.loadout.model) state.model = measured.loadout.model
+  state.measuredAt = new Date().toLocaleTimeString()
+  return measured.loadout
+}
+
+function applyAccess(state: State, report: AccessReport): AccessReport {
+  state.access = report
+  state.accessCheckedAt = new Date().toLocaleTimeString()
+  if (report.model && report.model !== 'unknown model') state.model = report.model
+  return report
+}
+
+async function refreshLoadout($: ModApi, state: State, detail: 'summary' | 'full'): Promise<void> {
+  if (state.measuring) return
+  state.measuring = true
+  state.contextError = ''
+  $.ui.invalidate('ui.render')
+  try {
+    applyLoadout(state, await readLoadout($, detail, state.usageLog, state.currentDirectory, state.lazy), detail)
+  } catch {
+    state.contextError = 'Could not measure the context window for this session.'
+  } finally {
+    state.measuring = false
+    $.ui.invalidate('ui.render')
+  }
+}
+
+async function refreshAccess($: ModApi, state: State): Promise<void> {
+  if (state.checkingAccess) return
+  state.checkingAccess = true
+  state.accessError = ''
+  $.ui.invalidate('ui.render')
+  try {
+    applyAccess(state, await readAccess($, state.currentDirectory))
+  } catch {
+    state.accessError = 'Could not read the tools and permissions of this session.'
+  } finally {
+    state.checkingAccess = false
+    $.ui.invalidate('ui.render')
+  }
+}
+
+async function refreshAgents($: ModApi, state: State): Promise<void> {
+  state.loadingAgents = true
+  state.agentError = ''
+  $.ui.invalidate('ui.render')
+  try {
+    state.sessionAgents = await $.agent.list()
+  } catch {
+    state.sessionAgents = []
+    state.agentError = 'Could not load agents for this Claude Code session.'
+  } finally {
+    state.loadingAgents = false
+    $.ui.invalidate('ui.render')
+  }
+}
+
+/** Everything the Overview shows, fetched together. */
+async function refreshAll($: ModApi, state: State): Promise<void> {
+  await Promise.allSettled([
+    refreshLoadout($, state, state.loadoutDetail),
+    refreshAccess($, state),
+    refreshAgents($, state),
+  ])
+}
+
+/** On open, fetch only what is missing; r refreshes everything. */
+async function fillMissing($: ModApi, state: State): Promise<void> {
+  await Promise.allSettled([
+    state.loadout ? undefined : refreshLoadout($, state, 'summary'),
+    state.access ? undefined : refreshAccess($, state),
+    refreshAgents($, state),
+  ])
+}
+
+/** Switches the pane to a view and loads what that view needs. */
+function openTab($: ModApi, state: State, tab: DashboardTab): void {
+  state.activeTab = tab
+  $.ui.invalidate('ui.render')
+  if (tab === 'context' && !state.loadout) void refreshLoadout($, state, 'summary')
+  if (tab === 'access' && !state.access) void refreshAccess($, state)
+  if (tab === 'agents') {
+    state.agentSubview = 'active'
+    void refreshAgents($, state)
+  }
+}
+
+/**
+ * One quick measurement in the background at startup: it saves this session's
+ * loadout for the next comparison and warns when it grew or is over budget.
+ */
+async function startupCheck($: ModApi, state: State): Promise<void> {
+  state.measuring = true
+  try {
+    const measured = await readLoadout($, 'summary', state.usageLog, state.currentDirectory, state.lazy)
+    state.measuring = false
+    if (state.loadout) return
+    applyLoadout(state, measured, 'summary')
+    const alert = startupAlert(measured.loadout, measured.since, state.alerts)
+    if (alert) await $.ui.toast(alert)
+  } catch {
+    // The startup check is a convenience; /cognita measures again.
+  } finally {
+    state.measuring = false
+    $.ui.invalidate('ui.render')
+  }
+}
+
+async function launchAgent($: ModApi, state: State, project: Workspace, value: string): Promise<void> {
+  const task = value.trim()
+  if (!task || state.launchingAgent) return
+  state.launchingAgent = true
+  $.ui.invalidate('ui.render')
+  try {
+    const result = await $.agent.spawn({
+      prompt: task,
+      description: task.length > 64 ? `${task.slice(0, 61)}…` : task,
+      cwd: project.path || undefined,
+    })
+    if (result.deny) {
+      await $.ui.toast(`Could not start agent: ${result.deny}`)
+      return
+    }
+    state.agentPrompt = ''
+    state.agentSubview = 'active'
+    await refreshAgents($, state)
+    await $.ui.toast(`Agent started in ${project.name}.`)
+  } catch {
+    await $.ui.toast(`Could not start an agent in ${project.name}.`)
+  } finally {
+    state.launchingAgent = false
+    $.ui.invalidate('ui.render')
+  }
+}
+
+async function runCommand($: ModApi, state: State, event: ModEvent): Promise<{ text?: string }> {
+  const [subcommand = '', option = '', ...rest] = (event.args ?? '').trim().toLowerCase().split(/\s+/)
+  const options = new Set([option, ...rest])
+  const rawTail = (event.args ?? '').trim().split(/\s+/).slice(1).join(' ')
+
+  if (subcommand === 'help') return { text: HELP }
+
+  if (subcommand === 'access' && !options.has('open')) {
+    try {
+      const report = applyAccess(state, await readAccess($, state.currentDirectory))
+      if (options.has('json')) return { text: '```json\n' + formatAccessJson(report) + '\n```' }
+      return { text: formatAccess(report) }
+    } catch {
+      return { text: 'Could not read the tools and permissions of this session.' }
+    }
   }
 
-  on('session.start', async ($, event, next) => {
-    await $.command.register({
-      name: COMMAND_NAME,
-      description: 'Workspace dashboard and context loadout (try: /inspector report)',
-    })
-    currentDirectory = event.cwd ?? ''
-    lazy.setCwd(currentDirectory)
-    isStatusLineEnabled = (await $.env.get('CLAUDE_INSPECTOR_STATUSLINE'))?.trim() !== '0'
-    alerts = await readAlertSettings($)
-    const isStartupCheckEnabled = (await $.env.get('CLAUDE_INSPECTOR_STARTUP_CHECK'))?.trim() !== '0'
-    ;({ workspaces, selectedWorkspace } = await discoverWorkspaces($, currentDirectory))
-    const result = await next?.(event)
+  if (subcommand === 'report') {
+    try {
+      const detail = options.has('full') ? 'full' : 'summary'
+      const measured = applyLoadout(state, await readLoadout($, detail, state.usageLog, state.currentDirectory, state.lazy), detail)
+      if (options.has('json')) return { text: '```json\n' + formatJson(measured, state.since, state.alerts) + '\n```' }
+      const held = state.lazy.pendingNames()
+      const heldLine = held.length > 0
+        ? `\n\nHeld for this project: ${held.join(', ')} (not loaded this session) · \`/cognita connect <name>\``
+        : ''
+      return { text: formatReport(measured, promptCapture(state), state.usageLog, state.since, state.alerts.budget) + heldLine }
+    } catch {
+      return { text: 'Could not measure the context window for this session.' }
+    }
+  }
 
-    // One quick measurement in the background: it saves this session's loadout
-    // for the next comparison and warns when the loadout grew or is over budget.
-    if (isStartupCheckEnabled && event.isInteractive !== false && !loadout) {
-      void readLoadout($, 'summary', usageLog, currentDirectory, lazy).then(async (measured) => {
-        if (loadout) return
-        applyLoadout(measured, 'summary')
-        const alert = startupAlert(measured.loadout, measured.since, alerts)
-        if (alert) await $.ui.toast(alert)
-        $.ui.invalidate('ui.render')
-      }).catch(() => undefined)
+  if (subcommand === 'trim') {
+    try {
+      const measured = applyLoadout(state, await readLoadout($, 'summary', state.usageLog, state.currentDirectory, state.lazy), 'summary')
+      return { text: formatTrimPlan(measured, state.alerts.budget) }
+    } catch {
+      return { text: 'Could not measure the context window for this session.' }
+    }
+  }
+
+  if (subcommand === 'hold' || subcommand === 'connect' || subcommand === 'release') {
+    try {
+      return { text: await state.lazy[subcommand](lazyIo($), rawTail, state.loadout?.mcpServers) }
+    } catch {
+      return { text: `Could not run /cognita ${subcommand}.` }
+    }
+  }
+
+  if (subcommand === 'history') {
+    try {
+      // Measuring first adds this session to the trend.
+      applyLoadout(state, await readLoadout($, 'summary', state.usageLog, state.currentDirectory, state.lazy), 'summary')
+      const trend = trendOf(await $.store.get(`history:${state.currentDirectory}`))
+      return { text: formatHistory(trend, await $.session.id(), state.alerts.budget) }
+    } catch {
+      return { text: 'Could not read the loadout history for this project.' }
+    }
+  }
+
+  if (subcommand === 'context' || subcommand === 'access' || subcommand === 'agents' || subcommand === 'overview') {
+    state.activeTab = subcommand
+  } else if (subcommand) {
+    return { text: `Unknown option "${subcommand}".\n\n${HELP}` }
+  } else {
+    state.activeTab = 'overview'
+  }
+
+  // Fill what the pane shows; each part redraws as it arrives.
+  void fillMissing($, state)
+
+  try {
+    // Ask for room: the dock caps the width at its share, the inline block at what the layout spares.
+    await $.ui.open({ id: PANE_ID, title: 'Cognita', focus: true, closeOnEscape: true, columns: 110, rows: 40 })
+    return {}
+  } catch {
+    return { text: 'Could not open the Cognita pane. Try `/cognita report` or `/cognita access` instead.' }
+  }
+}
+
+function renderPane($: ModApi, state: State, event: ModEvent): unknown {
+  const ui = $.ui.resolve(event)
+  const redraw = () => $.ui.invalidate('ui.render')
+  const project: Workspace = { name: basename(state.currentDirectory) || 'this project', path: state.currentDirectory }
+  const select = (tab: DashboardTab) => openTab($, state, tab)
+  const lazyAction = (run: () => Promise<string>) => async () => {
+    try {
+      await $.ui.toast(await run())
+    } catch {
+      await $.ui.toast('Could not change the held MCP servers.')
+    }
+    redraw()
+  }
+
+  const sidebar = renderSidebar(ui, {
+    activeTab: state.activeTab,
+    project: project.name,
+    model: state.model,
+    onTabSelect: select,
+  })
+
+  let content: unknown
+  if (state.activeTab === 'overview') {
+    content = renderOverview(ui, {
+      loadout: state.loadout,
+      access: state.access,
+      sessionAgents: state.sessionAgents,
+      loading: state.measuring || state.checkingAccess,
+      error: [state.contextError, state.accessError].filter(Boolean).join(' '),
+      onRefresh: () => void refreshAll($, state),
+      onOpen: select,
+    })
+  } else if (state.activeTab === 'context') {
+    content = renderContext(ui, {
+      loadout: state.loadout,
+      since: state.since,
+      prompt: promptCapture(state),
+      subview: state.contextSubview,
+      measuredAt: state.measuredAt,
+      detail: state.loadoutDetail,
+      loading: state.measuring,
+      error: state.contextError,
+      held: state.lazyView.held,
+      unusedSessions: state.lazyView.unusedSessions,
+      onHold: (server) => void lazyAction(() => state.lazy.hold(lazyIo($), server, state.loadout?.mcpServers))(),
+      onConnect: (server) => void lazyAction(() => state.lazy.connect(lazyIo($), server ?? '', state.loadout?.mcpServers))(),
+      onRefresh: (detail) => void refreshLoadout($, state, detail),
+      onSubviewChange: (subview) => {
+        state.contextSubview = subview
+        redraw()
+      },
+    })
+  } else if (state.activeTab === 'access') {
+    content = renderAccess(ui, {
+      access: state.access,
+      subview: state.accessSubview,
+      loading: state.checkingAccess,
+      error: state.accessError,
+      checkedAt: state.accessCheckedAt,
+      onRefresh: () => void refreshAccess($, state),
+      onSubviewChange: (subview) => {
+        state.accessSubview = subview
+        redraw()
+      },
+    })
+  } else {
+    content = renderAgents(ui, {
+      agentSubview: state.agentSubview,
+      agentSearch: state.agentSearch,
+      agentPrompt: state.agentPrompt,
+      sessionAgents: state.sessionAgents,
+      selectedAgentId: state.selectedAgentId,
+      selectedWorkspace: project,
+      agentError: state.agentError,
+      loadingAgents: state.loadingAgents,
+      launchingAgent: state.launchingAgent,
+      redraw,
+      onSubviewChange: (subview) => {
+        state.agentSubview = subview
+        if (subview === 'active' || subview === 'inactive') state.agentSearch = ''
+      },
+      onAgentSearchInput: (value) => {
+        state.agentSearch = value
+        redraw()
+      },
+      onAgentSearchSubmit: (value) => {
+        state.agentSearch = value
+        redraw()
+      },
+      onRefreshAgents: () => refreshAgents($, state),
+      onSelectAgent: (agentId) => {
+        state.selectedAgentId = agentId
+        state.agentSubview = 'detail'
+        redraw()
+      },
+      onAgentPromptInput: (value) => {
+        state.agentPrompt = value
+      },
+      onAgentPromptSubmit: (value) => launchAgent($, state, project, value),
+    })
+  }
+
+  if (paneColumns(event) < COMPACT_BELOW) {
+    return ui.Box({
+      flexDirection: 'column',
+      flexGrow: 1,
+      rowGap: 1,
+      children: [renderTabStrip(ui, { activeTab: state.activeTab, onTabSelect: select }), content],
+    })
+  }
+
+  return ui.Box({
+    flexDirection: 'row',
+    flexGrow: 1,
+    columnGap: 1,
+    children: [sidebar, content],
+  })
+}
+
+/** Below this many columns the sidebar gives way to a row of view buttons. */
+const COMPACT_BELOW = 80
+
+/**
+ * About how wide the pane is: docked beside a fullscreen transcript (from 110
+ * columns) it gets at most 45% of the terminal; otherwise the full width.
+ */
+function paneColumns(event: ModEvent): number {
+  const viewport = event.viewport as { columns?: number; isFullscreen?: boolean } | undefined
+  if (!viewport || !viewport.columns || viewport.columns <= 0) return 120
+  return viewport.isFullscreen !== false && viewport.columns >= 110 ? Math.floor(viewport.columns * 0.45) : viewport.columns
+}
+
+export function register(on: ModOn): void {
+  const state = createState()
+
+  on('session.start', async ($, event, next) => {
+    for (const name of [COMMAND_NAME, LEGACY_COMMAND_NAME]) {
+      await $.command.register({
+        name,
+        description: name === COMMAND_NAME
+          ? 'See what your agent has loaded and what it can do (try: /cognita access)'
+          : 'Alias of /cognita',
+      })
+    }
+    state.currentDirectory = event.cwd ?? ''
+    state.lazy.setCwd(state.currentDirectory)
+    state.isStatusLineEnabled = (await $.env.get('CLAUDE_INSPECTOR_STATUSLINE'))?.trim() !== '0'
+    state.alerts = await readAlertSettings($)
+    const isStartupCheckEnabled = (await $.env.get('CLAUDE_INSPECTOR_STARTUP_CHECK'))?.trim() !== '0'
+    const result = await next?.(event)
+    if (isStartupCheckEnabled && event.isInteractive !== false && !state.loadout && !state.measuring) {
+      void startupCheck($, state)
     }
     return result
   })
 
   // Holds back the engine's start-up raise of every MCP server this project holds.
-  on('mcp.connect', ($, event, next) => lazy.onConnect(lazyIo($), event, next))
+  on('mcp.connect', ($, event, next) => state.lazy.onConnect(lazyIo($), event, next))
 
-  on('command.run', { command: COMMAND_NAME }, async ($, event) => {
-    const rawTail = (event.args ?? '').trim().split(/\s+/).slice(1).join(' ')
-    const [subcommand = '', option = '', ...rest] = (event.args ?? '').trim().toLowerCase().split(/\s+/)
-
-    if (subcommand === 'help') return { text: HELP }
-
-    if (subcommand === 'report') {
-      try {
-        const options = new Set([option, ...rest])
-        const detail = options.has('full') ? 'full' : 'summary'
-        const measured = applyLoadout(await readLoadout($, detail, usageLog, currentDirectory, lazy), detail)
-        if (options.has('json')) return { text: '```json\n' + formatJson(measured, since, alerts) + '\n```' }
-        const held = lazy.pendingNames()
-        const heldLine = held.length > 0
-          ? `\n\nHeld for this project: ${held.join(', ')} (not loaded this session) · \`/inspector connect <name>\``
-          : ''
-        return { text: formatReport(measured, promptCapture(), usageLog, since, alerts.budget) + heldLine }
-      } catch {
-        return { text: 'Could not measure the context window for this session.' }
-      }
-    }
-
-    if (subcommand === 'trim') {
-      try {
-        const measured = applyLoadout(await readLoadout($, 'summary', usageLog, currentDirectory, lazy), 'summary')
-        return { text: formatTrimPlan(measured, alerts.budget) }
-      } catch {
-        return { text: 'Could not measure the context window for this session.' }
-      }
-    }
-
-    if (subcommand === 'hold' || subcommand === 'connect' || subcommand === 'release') {
-      try {
-        return { text: await lazy[subcommand](lazyIo($), rawTail, loadout?.mcpServers) }
-      } catch {
-        return { text: `Could not run /inspector ${subcommand}.` }
-      }
-    }
-
-    if (subcommand === 'history') {
-      try {
-        // Measuring first adds this session to the trend.
-        applyLoadout(await readLoadout($, 'summary', usageLog, currentDirectory, lazy), 'summary')
-        const trend = trendOf(await $.store.get(`history:${currentDirectory}`))
-        return { text: formatHistory(trend, await $.session.id(), alerts.budget) }
-      } catch {
-        return { text: 'Could not read the loadout history for this project.' }
-      }
-    }
-
-    if (subcommand === 'context') {
-      activeTab = 'context'
-      if (!loadout) void readLoadout($, 'summary', usageLog, currentDirectory, lazy).then((measured) => {
-        applyLoadout(measured, 'summary')
-        $.ui.invalidate('ui.render')
-      }, () => undefined)
-    } else if (subcommand) {
-      return { text: `Unknown option "${subcommand}".\n\n${HELP}` }
-    }
-
-    return $.ui
-      .open({ id: PANE_ID, title: 'Claude Code', focus: true, closeOnEscape: true })
-      .then(() => ({}))
-      .catch(() => ({ text: 'Could not open Workspace Dashboard.' }))
-  })
+  on('command.run', { command: COMMAND_NAME }, ($, event) => runCommand($, state, event))
+  on('command.run', { command: LEGACY_COMMAND_NAME }, ($, event) => runCommand($, state, event))
 
   // Observe-only hooks: they record what the session uses and always pass
   // the event on unchanged, so a failure here never changes what Claude does.
   on('tool.call', ($, event, next) => {
     try {
       if (typeof event.tool === 'string') {
-        recordToolCall(usageLog, event.tool)
+        recordToolCall(state.usageLog, event.tool)
         const server = mcpServerOf(event.tool)
-        if (server) lazy.noteUsed(lazyIo($), server)
+        if (server) state.lazy.noteUsed(lazyIo($), server)
       }
     } catch {
       // Recording is best effort.
@@ -217,7 +537,7 @@ export function register(on: ModOn): void {
 
   on('skill.prompt', ($, event, next) => {
     try {
-      if (typeof event.skill === 'string') recordSkillUse(usageLog, event.skill)
+      if (typeof event.skill === 'string') recordSkillUse(state.usageLog, event.skill)
     } catch {
       // Recording is best effort.
     }
@@ -226,28 +546,28 @@ export function register(on: ModOn): void {
 
   on('prompt.compose', async ($, event, next) => {
     const result = await next?.(event)
-    if (Array.isArray(result?.sections)) promptSections = result.sections
+    if (Array.isArray(result?.sections)) state.promptSections = result.sections
     return result
   })
 
   on('prompt.context', async ($, event, next) => {
     const result = await next?.(event)
-    if (Array.isArray(result?.blocks)) promptBlocks = result.blocks
+    if (Array.isArray(result?.blocks)) state.promptBlocks = result.blocks
     const files = result?.instructionFiles ?? event.instructionFiles
-    if (Array.isArray(files)) instructionFiles = files
+    if (Array.isArray(files)) state.instructionFiles = files
     return result
   })
 
   on('session.measure', ($, event, next) => {
-    if (isStatusLineEnabled) {
+    if (state.isStatusLineEnabled) {
       try {
         const context = event.context as SessionUsage['context'] | undefined
         const cost = event.cost as SessionUsage['cost']
         const percent = context?.percent
-        const held = lazy.pendingNames().length
+        const held = state.lazy.pendingNames().length
         $.ui.status(percent === undefined
           ? undefined
-          : [`ctx ${Math.round(percent)}%`, cost ? `$${cost.usd.toFixed(2)}` : '', sinceBadge(since), held > 0 ? `${held} MCP held` : ''].filter(Boolean).join(' · '))
+          : [`ctx ${Math.round(percent)}%`, cost ? `$${cost.usd.toFixed(2)}` : '', sinceBadge(state.since), held > 0 ? `${held} MCP held` : ''].filter(Boolean).join(' · '))
       } catch {
         // The status line is cosmetic.
       }
@@ -257,225 +577,8 @@ export function register(on: ModOn): void {
 
   on('ui.render', { component: 'Pane' }, async ($, event, next) => {
     if (event.requestId !== PANE_ID) return next?.(event)
-
-    const ui = $.ui.resolve(event)
-    const redraw = () => $.ui.invalidate('ui.render')
-    const lazyView = await lazy.view(lazyIo($)).catch(() => ({ held: [], unusedSessions: {} }))
-    const lazyAction = (run: () => Promise<string>) => async () => {
-      try {
-        await $.ui.toast(await run())
-      } catch {
-        await $.ui.toast('Could not change the held MCP servers.')
-      }
-      redraw()
-    }
-
-    const refreshLoadout = async (detail: 'summary' | 'full') => {
-      if (measuring) return
-      measuring = true
-      contextError = ''
-      redraw()
-      try {
-        applyLoadout(await readLoadout($, detail, usageLog, currentDirectory, lazy), detail)
-      } catch {
-        contextError = 'Could not measure the context window for this session.'
-      } finally {
-        measuring = false
-        redraw()
-      }
-    }
-
-    const refreshDashboardContext = async () => {
-      dashboardError = ''
-      const [agentResult, contextResult] = await Promise.allSettled([
-        $.agent.list(),
-        $.command.run({ command: 'context' }),
-        readLoadout($, 'summary', usageLog, currentDirectory, lazy).then((measured) => applyLoadout(measured, 'summary')),
-      ])
-      if (agentResult.status === 'fulfilled') sessionAgents = agentResult.value
-      else dashboardError = 'Could not load subagent token statistics.'
-
-      if (contextResult.status === 'fulfilled' && contextResult.value.text?.trim()) {
-        contextSnapshots = [
-          ...contextSnapshots,
-          { capturedAt: new Date().toLocaleTimeString(), text: contextResult.value.text.trim() },
-        ].slice(-3)
-      } else if (contextResult.status === 'rejected') {
-        dashboardError = dashboardError || 'Could not capture the current context snapshot.'
-      } else if (!loadout) {
-        dashboardError = dashboardError || 'Claude Code did not return a context snapshot.'
-      }
-      redraw()
-    }
-
-    const refreshAgents = async () => {
-      loadingAgents = true
-      agentError = ''
-      redraw()
-      try {
-        sessionAgents = await $.agent.list()
-      } catch {
-        sessionAgents = []
-        agentError = 'Could not load agents for this Claude Code session.'
-      } finally {
-        loadingAgents = false
-        redraw()
-      }
-    }
-
-    const selected = workspaces.find((workspace) => workspace.path === selectedWorkspace) ?? {
-      name: basename(currentDirectory),
-      path: currentDirectory,
-    }
-
-    const openContext = async () => {
-      activeTab = 'context'
-      redraw()
-      if (!loadout) await refreshLoadout('summary')
-    }
-
-    const sidebar = renderSidebar(ui, {
-      activeTab,
-      workspaces,
-      selectedWorkspace,
-      searchOpen,
-      searchValue,
-      redraw,
-      onNewConversation: async () => {
-        try {
-          await $.command.run({ command: 'clear' })
-        } catch {
-          await $.ui.toast('Could not start a fresh conversation in this workspace.')
-        }
-      },
-      onSearchOpen: () => {
-        searchOpen = true
-        redraw()
-      },
-      onSearchInput: (value) => {
-        searchValue = value
-        redraw()
-      },
-      onSearchSubmit: (value) => {
-        searchValue = value
-        searchOpen = false
-        redraw()
-      },
-      onWorkspaceSelect: (workspace) => {
-        selectedWorkspace = workspace.path
-        activeTab = 'dashboard'
-        redraw()
-      },
-      onTabSelect: async (tab) => {
-        if (tab === 'context') return openContext()
-        activeTab = tab
-        if (tab === 'agents') {
-          agentSubview = 'active'
-          await refreshAgents()
-        }
-        redraw()
-      },
-    })
-
-    let content: unknown
-    if (activeTab === 'dashboard') {
-      content = renderDashboard(ui, {
-        selected,
-        sessionAgents,
-        contextSnapshots,
-        loadout,
-        dashboardError,
-        onRefreshContext: refreshDashboardContext,
-        onOpenContext: openContext,
-      })
-    } else if (activeTab === 'context') {
-      content = renderContext(ui, {
-        loadout,
-        since,
-        prompt: promptCapture(),
-        subview: contextSubview,
-        measuredAt,
-        detail: loadoutDetail,
-        loading: measuring,
-        error: contextError,
-        held: lazyView.held,
-        unusedSessions: lazyView.unusedSessions,
-        onHold: (server) => void lazyAction(() => lazy.hold(lazyIo($), server, loadout?.mcpServers))(),
-        onConnect: (server) => void lazyAction(() => lazy.connect(lazyIo($), server ?? '', loadout?.mcpServers))(),
-        onRefresh: (detail) => void refreshLoadout(detail),
-        onSubviewChange: (subview) => {
-          contextSubview = subview
-          redraw()
-        },
-      })
-    } else {
-      content = renderAgents(ui, {
-        agentSubview,
-        agentSearch,
-        agentPrompt,
-        sessionAgents,
-        selectedAgentId,
-        selectedWorkspace: selected,
-        agentError,
-        loadingAgents,
-        launchingAgent,
-        redraw,
-        onSubviewChange: (subview) => {
-          agentSubview = subview
-          if (subview === 'active' || subview === 'inactive') agentSearch = ''
-        },
-        onAgentSearchInput: (value) => {
-          agentSearch = value
-          redraw()
-        },
-        onAgentSearchSubmit: (value) => {
-          agentSearch = value
-          redraw()
-        },
-        onRefreshAgents: refreshAgents,
-        onSelectAgent: (agentId) => {
-          selectedAgentId = agentId
-          agentSubview = 'detail'
-          redraw()
-        },
-        onAgentPromptInput: (value) => {
-          agentPrompt = value
-        },
-        onAgentPromptSubmit: async (value) => {
-          const task = value.trim()
-          if (!task || launchingAgent) return
-          launchingAgent = true
-          redraw()
-          try {
-            const result = await $.agent.spawn({
-              prompt: task,
-              description: task.length > 64 ? `${task.slice(0, 61)}…` : task,
-              cwd: selected.path,
-            })
-            if (result.deny) {
-              await $.ui.toast(`Could not start agent: ${result.deny}`)
-              return
-            }
-            agentPrompt = ''
-            agentSubview = 'active'
-            await refreshAgents()
-            await $.ui.toast(`Agent started in ${selected.name}.`)
-          } catch {
-            await $.ui.toast(`Could not start an agent in ${selected.name}.`)
-          } finally {
-            launchingAgent = false
-            redraw()
-          }
-        },
-      })
-    }
-
-    return ui.Box({
-      flexDirection: 'row',
-      flexGrow: 1,
-      columnGap: 1,
-      children: [sidebar, content],
-    })
+    state.lazyView = await state.lazy.view(lazyIo($)).catch(() => ({ held: [], unusedSessions: {} }))
+    return renderPane($, state, event)
   })
 }
 
@@ -498,6 +601,46 @@ async function readLoadout($: ModApi, detail: 'summary' | 'full', usageLog: Usag
   if (!breakdown) throw new Error('Claude Code returned no context breakdown.')
   const loadout = summarize(breakdown, usageLog)
   return { loadout, since: await compareWithLastSession($, cwd, loadout, lazy) }
+}
+
+/**
+ * Reads what the agent can reach: its tools, what the permission system answers
+ * for a set of sample actions (asked, never run), settings, plugins and commands.
+ * Every part is best effort, so one failing API leaves the rest of the report.
+ */
+async function readAccess($: ModApi, cwd: string): Promise<AccessReport> {
+  const tools = await $.tool.list()
+  const names = new Set(tools.map((tool) => tool.name))
+  const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE')) || '~'
+  const paths = { cwd: cwd || '.', home }
+
+  const probes = await Promise.all(PROBES.map(async (probe): Promise<ProbeResult> => {
+    const base = { key: probe.key, label: probe.label, tool: probe.tool, isRisky: probe.isRisky }
+    if (!names.has(probe.tool)) return { ...base, verdict: 'missing' }
+    try {
+      const result = await $.tool.check({ tool: probe.tool, input: probe.input(paths) })
+      return { ...base, verdict: result.decision, reason: result.reason, rule: result.rule }
+    } catch {
+      return { ...base, verdict: 'unknown' }
+    }
+  }))
+
+  const settings: Partial<Record<SettingsSourceName, unknown>> = {}
+  await Promise.all(SETTINGS_SOURCES.map(async (source) => {
+    try {
+      settings[source] = await $.settings.read({ source })
+    } catch {
+      // A source that is absent or unreadable adds nothing.
+    }
+  }))
+
+  const [commands, model, version] = await Promise.all([
+    $.command.list().catch(() => []),
+    $.session.model().catch(() => undefined),
+    $.session.version().then((value) => value.version).catch(() => undefined),
+  ])
+
+  return analyzeAccess({ model, version, tools, probes, settings, commands })
 }
 
 /** Budget and growth warnings from CLAUDE_INSPECTOR_BUDGET and CLAUDE_INSPECTOR_ALERT. */
@@ -524,38 +667,4 @@ async function compareWithLastSession($: ModApi, cwd: string, loadout: Loadout, 
   } catch {
     return undefined
   }
-}
-
-/**
- * Lists sibling projects to pick from: CLAUDE_CODE_WORKSPACES_DIR when set,
- * else ~/programming, else the folder that holds the current project.
- */
-async function discoverWorkspaces($: ModApi, currentDirectory: string): Promise<{ workspaces: Workspace[]; selectedWorkspace: string }> {
-  const configuredRoot = (await $.env.get('CLAUDE_CODE_WORKSPACES_DIR'))?.trim()
-  const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE'))
-  const roots = configuredRoot
-    ? [configuredRoot]
-    : [home ? joinPath(home, 'programming') : '', currentDirectory ? dirname(currentDirectory) : '']
-  let workspaces: Workspace[] = []
-  for (const root of roots.filter(Boolean)) {
-    try {
-      const entries = await $.fs.list(root)
-      workspaces = entries
-        .filter((entry) => entry.kind === 'directory' && !entry.isLink && !entry.name.startsWith('.'))
-        .map((entry) => ({ name: entry.name, path: joinPath(root, entry.name) }))
-      if (workspaces.length > 0) break
-    } catch {
-      // Missing or unreadable root: try the next candidate.
-    }
-  }
-  const current = basename(currentDirectory)
-  if (currentDirectory && !workspaces.some((workspace) => workspace.path === currentDirectory || workspace.name === current)) {
-    workspaces.unshift({ name: current, path: currentDirectory })
-  }
-  workspaces.sort((left, right) => left.name.localeCompare(right.name))
-  const selectedWorkspace = workspaces.find((workspace) => workspace.path === currentDirectory)?.path
-    ?? workspaces.find((workspace) => workspace.name === current)?.path
-    ?? workspaces[0]?.path
-    ?? currentDirectory
-  return { workspaces, selectedWorkspace }
 }

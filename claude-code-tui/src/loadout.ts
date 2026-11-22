@@ -718,9 +718,9 @@ function leverSteps(lever: Lever): string[] {
   if (lever.kind === 'mcp') {
     return [
       '   ```',
-      `   /inspector hold ${lever.target}`,
+      `   /cognita hold ${lever.target}`,
       '   ```',
-      `   From the next session in this project; \`/inspector connect ${lever.target}\` brings it back any time.`,
+      `   From the next session in this project; \`/cognita connect ${lever.target}\` brings it back any time.`,
     ]
   }
   return [`   Open \`${lever.target}\` and move the sections you rarely need into a skill, which loads only when used.`]

@@ -365,8 +365,8 @@ test('the trim plan gives each lever a command, a running total and the budget o
   for (const lever of loadout.levers) {
     if (lever.kind === 'plugin') assert.ok(plan.includes(`claude plugin disable ${lever.target} --scope local`))
     if (lever.kind === 'mcp') {
-      assert.ok(plan.includes(`/inspector hold ${lever.target}`))
-      assert.ok(plan.includes(`/inspector connect ${lever.target}\` brings it back any time`))
+      assert.ok(plan.includes(`/cognita hold ${lever.target}`))
+      assert.ok(plan.includes(`/cognita connect ${lever.target}\` brings it back any time`))
       assert.ok(!plan.includes('**Disable**'))
     }
   }

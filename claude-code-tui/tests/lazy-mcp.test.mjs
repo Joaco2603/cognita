@@ -72,7 +72,7 @@ test('the hold hook refuses every engine raise of a held server and records the 
     const result = await lazy.onConnect($, { server: 'plugin:neon:neon' }, engine(passed))
     assert.equal(result.value.isConnected, false)
     assert.equal(result.value.reason, 'disabled')
-    assert.match(result.value.message, /\/inspector connect/)
+    assert.match(result.value.message, /\/cognita connect/)
   }
   assert.deepEqual(lazy.pendingNames(), ['plugin:neon:neon'])
 })
@@ -90,9 +90,9 @@ test('the hold hook passes other servers, other plugins and servers already conn
 test('the hold hook fails open when the store throws, and never holds the plugin own server', async () => {
   const broken = { cwd: async () => '/proj', get: async () => { throw new Error('boom') } }
   assert.equal(await createLazyMcp().onConnect(broken, { server: 'context7' }, engine(passed)), passed)
-  const own = fakeApi({ 'held:/proj': ['plugin_workspace-dashboard_workspace-dashboard'] })
-  assert.equal(await createLazyMcp().onConnect(own.$, { server: 'plugin:workspace-dashboard:workspace-dashboard' }, engine(passed)), passed)
-  assert.match(await createLazyMcp().hold(own.$, 'workspace-dashboard'), /No MCP server matches/)
+  const own = fakeApi({ 'held:/proj': ['plugin_cognita_cognita'] })
+  assert.equal(await createLazyMcp().onConnect(own.$, { server: 'plugin:cognita:cognita' }, engine(passed)), passed)
+  assert.match(await createLazyMcp().hold(own.$, 'cognita'), /No MCP server matches/)
 })
 
 test('connect with a name or with none brings back held servers and reports a refusal', async () => {
