@@ -5,10 +5,15 @@ All notable changes to Cognita are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.8.0] - 2026-11-22
+## [0.8.0] - 2026-11-21
 
 ### Added
-- Lazy MCP: hold an MCP server for a project so it stays off at startup, and bring it back with one command or key.
+- Lazy MCP: `/cognita hold <server>` keeps an MCP server off at startup for a project, using the engine's `mcp.connect` hook (no settings files are touched). `/cognita connect` (or `c` in the pane) brings it back mid-session and `/cognita release` makes it load every time. Nothing is held by default.
+- Suggestions: a server that loaded in 3 sessions of the project without a single call is offered as a candidate.
+
+### Changed
+- The trim plan proposes `/cognita hold` instead of `/mcp`.
+- Commands also answer under the `/inspector` alias.
 
 ## [0.7.1] - 2026-11-21
 
