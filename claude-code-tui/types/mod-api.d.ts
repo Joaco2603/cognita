@@ -142,6 +142,10 @@ interface ModApi {
       title: string
       focus?: true
       closeOnEscape?: true
+      /** Width wanted while docked (capped at 45% of the terminal). */
+      columns?: number
+      /** Height wanted while inline above the prompt. */
+      rows?: number
     }) => Promise<{ isPlaced: boolean }>
     resolve: (event: ModEvent) => UiComponents
     invalidate: (event: 'ui.render') => void

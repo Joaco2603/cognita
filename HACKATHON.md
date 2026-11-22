@@ -112,6 +112,10 @@ Registrarlo en la sección siguiente para la entrega.
   - Video demo de 77 s ([`demo/cognita-demo.mp4`](./demo/cognita-demo.mp4)), hecho con HyperFrames a partir de salida real del plugin: el problema, el Overview, `/cognita access` detectando `.env`, la regla que lo bloquea, `/cognita trim` y la instalación.
   - Enlaces del README verificados (rutas locales y GitHub).
 
+- **2026-11-21 · Video demo en vivo, EN y ES (v0.7.1).**
+  - El video ahora es una **grabación real de pantalla**: una sesión de Claude Code en Windows Terminal donde se abre `/cognita`, se recorren Overview, Context, Access y Agents, se agrega en vivo la regla `deny: Read(./.env)`, Access la muestra bloqueada al re-chequear y `/cognita trim` arma el plan. Insignia "LIVE RECORDING" en pantalla.
+  - Dos versiones narradas con subtítulos: inglés ([`demo/cognita-demo-en.mp4`](./demo/cognita-demo-en.mp4)) y español ([`demo/cognita-demo-es.mp4`](./demo/cognita-demo-es.mp4)). Voz local con Kokoro (sin servicios pagos), música de fondo del catálogo de HeyGen, edición y zooms con HyperFrames (`demo/live/`, `node build.mjs en|es`).
+  - Arreglos de UI que salieron al grabar: el panel abre a 110×40, modo compacto con pestañas cuando el panel mide menos de 80 columnas, etiquetas de la barra lateral sin duplicados y valores de Access que ya no se cortan. Tests: 28 de UI y 37 unitarios, en verde.
 ## Cómo usamos AI coding
 
 - **Herramienta:** Claude Code (CLI) en todo el ciclo: diseño, implementación en TypeScript, tests, documentación y pruebas funcionales.
@@ -128,6 +132,6 @@ Registrarlo en la sección siguiente para la entrega.
 - [x] `npm run build`, `npm test` y `npm run validate` en verde
 - [x] Sección "Cómo usamos AI coding" en la entrega
 - [x] Diferencia entre línea base y avance del hackathon documentada
-- [x] Video demo corto: [`demo/cognita-demo.mp4`](./demo/cognita-demo.mp4) (77 s)
+- [x] Video demo en vivo (81 s, con voz y música) en inglés y español: [`demo/cognita-demo-en.mp4`](./demo/cognita-demo-en.mp4), [`demo/cognita-demo-es.mp4`](./demo/cognita-demo-es.mp4)
 - [x] Enlaces verificados
 - [ ] El capitán envía antes del dom 22 nov 23:59 UTC−6

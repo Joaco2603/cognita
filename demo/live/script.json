@@ -1,0 +1,28 @@
+{
+  "lines": [
+    { "at": 0.5,  "en": { "cap": "This is Cognita: a Claude Code plugin that shows what your agent loads, and what it can do.", "say": "This is Cognita: a Claude Code plugin that shows what your agent loads, and what it can do." },
+                  "es": { "cap": "Esto es Cognita: un plugin de Claude Code que muestra qué carga tu agente y qué puede hacer.", "say": "Esto es Cognita: un plugin de Claude Code que muestra qué carga tu agente, y qué puede hacer." } },
+    { "at": 6.2,  "en": { "cap": "One command opens the pane. Context first: 35k tokens load before you type a word.", "say": "One command opens the pane. Context first: thirty-five thousand tokens load before you type a word." },
+                  "es": { "cap": "Un comando abre el panel. Primero, el contexto: 35k tokens se cargan antes de que escribas nada.", "say": "Un comando abre el panel. Primero, el contexto: treinta y cinco mil tokens se cargan antes de que escribas nada." } },
+    { "at": 14.4, "en": { "cap": "9k of them were never used. Cognita names the biggest lever: a plugin with 16 skills nobody called.", "say": "Nine thousand of them were never used. Cognita names the biggest lever: a plugin with sixteen skills nobody called." },
+                  "es": { "cap": "9k nunca se usaron. Cognita señala la mayor palanca: un plugin con 16 skills que nadie llamó.", "say": "Nueve mil nunca se usaron. Cognita señala la mayor palanca: un plugin con dieciséis skills que nadie llamó." } },
+    { "at": 22.6, "en": { "cap": "Access asks the permission system, without running anything. The problem: reading .env secrets runs without asking.", "say": "Access asks the permission system, without running anything. And here's the problem: reading dot env secrets runs without asking." },
+                  "es": { "cap": "Acceso le pregunta al sistema de permisos, sin ejecutar nada. El problema: leer los secretos de .env se hace sin preguntar.", "say": "Acceso le pregunta al sistema de permisos, sin ejecutar nada. Y aquí está el problema: leer los secretos de punto env se hace sin preguntar." } },
+    { "at": 32.6, "en": { "cap": "Let's fix it, live: one deny rule in the project settings.", "say": "Let's fix it, live. One deny rule in the project settings." },
+                  "es": { "cap": "Arreglémoslo en vivo: una regla de bloqueo en la configuración del proyecto.", "say": "Arreglémoslo en vivo. Una regla de bloqueo en la configuración del proyecto." } },
+    { "at": 39.0, "en": { "cap": "Claude confirms the rule is in place.", "say": "Claude confirms the rule is in place." },
+                  "es": { "cap": "Claude confirma que la regla quedó puesta.", "say": "Claude confirma que la regla quedó puesta." } },
+    { "at": 47.6, "en": { "cap": "Back in Cognita: check again.", "say": "Back in Cognita. Check again." },
+                  "es": { "cap": "De vuelta en Cognita: revisamos otra vez.", "say": "De vuelta en Cognita. Revisamos otra vez." } },
+    { "at": 52.8, "en": { "cap": "Reading .env secrets is now blocked.", "say": "Reading dot env secrets is now blocked." },
+                  "es": { "cap": "Leer los secretos de .env ahora está bloqueado.", "say": "Leer los secretos de punto env ahora está bloqueado." } },
+    { "at": 62.0, "en": { "cap": "And /cognita trim turns the levers into a plan: the exact command, what it saves, and how to undo it.", "say": "And slash cognita trim turns the levers into a plan: the exact command, what it saves, and how to undo it." },
+                  "es": { "cap": "Y /cognita trim convierte las palancas en un plan: el comando exacto, cuánto ahorra y cómo deshacerlo.", "say": "Y slash cognita trim convierte las palancas en un plan: el comando exacto, cuánto ahorra, y cómo deshacerlo." } },
+    { "at": 75.6, "en": { "cap": "Cognita. See what your agent can load and do.", "say": "Cognita. See what your agent can load and do. Install it from the marketplace." },
+                  "es": { "cap": "Cognita. Mira qué puede cargar y hacer tu agente.", "say": "Cognita. Mira qué puede cargar y hacer tu agente. Instálalo desde el marketplace." } }
+  ],
+  "ui": {
+    "en": { "tag": "Live demo · real Claude Code session", "sub": "See what your Claude Code agent can load and do.", "install": "Install", "rec": "LIVE RECORDING" },
+    "es": { "tag": "Demo en vivo · sesión real de Claude Code", "sub": "Mira qué puede cargar y hacer tu agente de Claude Code.", "install": "Instalar", "rec": "GRABACIÓN EN VIVO" }
+  }
+}

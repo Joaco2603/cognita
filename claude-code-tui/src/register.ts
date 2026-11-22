@@ -2,7 +2,7 @@ import { analyzeAccess, formatAccess, formatAccessJson, PROBES, SETTINGS_SOURCES
 import { renderAccess } from './access-view.js'
 import { renderAgents } from './agents-view.js'
 import { renderContext } from './context-view.js'
-import { renderOverview, renderSidebar } from './dashboard-view.js'
+import { renderOverview, renderSidebar, renderTabStrip } from './dashboard-view.js'
 import {
   DEFAULT_GROWTH_ALERT,
   diffLoadout,
@@ -327,7 +327,8 @@ async function runCommand($: ModApi, state: State, event: ModEvent): Promise<{ t
   void fillMissing($, state)
 
   try {
-    await $.ui.open({ id: PANE_ID, title: 'Cognita', focus: true, closeOnEscape: true })
+    // Ask for room: the dock caps the width at its share, the inline block at what the layout spares.
+    await $.ui.open({ id: PANE_ID, title: 'Cognita', focus: true, closeOnEscape: true, columns: 110, rows: 40 })
     return {}
   } catch {
     return { text: 'Could not open the Cognita pane. Try `/cognita report` or `/cognita access` instead.' }
@@ -424,12 +425,34 @@ function renderPane($: ModApi, state: State, event: ModEvent): unknown {
     })
   }
 
+  if (paneColumns(event) < COMPACT_BELOW) {
+    return ui.Box({
+      flexDirection: 'column',
+      flexGrow: 1,
+      rowGap: 1,
+      children: [renderTabStrip(ui, { activeTab: state.activeTab, onTabSelect: select }), content],
+    })
+  }
+
   return ui.Box({
     flexDirection: 'row',
     flexGrow: 1,
     columnGap: 1,
     children: [sidebar, content],
   })
+}
+
+/** Below this many columns the sidebar gives way to a row of view buttons. */
+const COMPACT_BELOW = 80
+
+/**
+ * About how wide the pane is: docked beside a fullscreen transcript (from 110
+ * columns) it gets at most 45% of the terminal; otherwise the full width.
+ */
+function paneColumns(event: ModEvent): number {
+  const viewport = event.viewport as { columns?: number; isFullscreen?: boolean } | undefined
+  if (!viewport || !viewport.columns || viewport.columns <= 0) return 120
+  return viewport.isFullscreen !== false && viewport.columns >= 110 ? Math.floor(viewport.columns * 0.45) : viewport.columns
 }
 
 export function register(on: ModOn): void {
