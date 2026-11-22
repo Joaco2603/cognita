@@ -157,7 +157,27 @@ const DOCKER_VALUE_FLAGS: ReadonlySet<string> = new Set([
   '-e', '--env', '--env-file', '-v', '--volume', '--mount', '-p', '--publish', '--name', '--network', '--net',
   '-w', '--workdir', '-u', '--user', '--entrypoint', '-l', '--label', '--platform', '--add-host', '--cap-add',
   '--cap-drop', '--memory', '-m', '--cpus', '--hostname', '-h', '--pull', '--restart', '--security-opt', '--tmpfs',
+  '--link', '--ulimit', '--gpus', '--device', '--log-driver', '--log-opt', '--pid', '--ipc', '--uts', '--userns',
+  '--shm-size', '--ip', '--ip6', '--dns', '--dns-search', '--dns-option', '--sysctl', '--volumes-from', '--group-add',
+  '--cgroupns', '--cgroup-parent', '--cpuset-cpus', '--cpu-shares', '--memory-swap', '--pids-limit', '--runtime',
+  '--stop-signal', '--stop-timeout', '--storage-opt', '--mac-address', '--network-alias', '--expose', '--env-file',
+  '--label-file', '--cidfile', '--detach-keys', '--health-cmd', '--health-interval', '--isolation', '--annotation',
+  '-a', '--attach', '-c', '--cpu-period', '--cpu-quota', '--blkio-weight', '--oom-score-adj', '--domainname', '--init-path',
 ])
+const DOCKER_GLOBAL_VALUE_FLAGS: ReadonlySet<string> = new Set([
+  '-H', '--host', '--context', '-c', '--config', '-l', '--log-level', '--tlscacert', '--tlscert', '--tlskey',
+  '--url', '--connection', '--root', '--runroot', '--storage-driver', '--storage-opt', '--cgroup-manager', '--conmon', '--network-config-dir',
+])
+
+/** The arguments after `run` in `docker [global flags] [container] run ...`, if this is a run. */
+function dockerRunArgs(rest: string[]): string[] | undefined {
+  let index = 0
+  while (index < rest.length && rest[index].startsWith('-')) {
+    index += DOCKER_GLOBAL_VALUE_FLAGS.has(rest[index]) ? 2 : 1
+  }
+  if (rest[index] === 'container') index += 1
+  return rest[index] === 'run' ? rest.slice(index + 1) : undefined
+}
 
 function classifyImage(image: string): Classification {
   if (/@sha256:[0-9a-f]+/i.test(image)) return { pin: 'pinned', reason: 'image digest' }
@@ -165,8 +185,8 @@ function classifyImage(image: string): Classification {
   const colon = tail.indexOf(':')
   if (colon < 0) return { pin: 'unpinned', reason: 'image has no tag, so :latest runs' }
   const tag = tail.slice(colon + 1)
-  if (tag === 'latest') return { pin: 'unpinned', reason: 'image tag :latest can change' }
-  return { pin: 'pinned', reason: `image tag :${tag}` }
+  if (EXACT_SEMVER.test(tag)) return { pin: 'pinned', reason: `image tag :${tag}` }
+  return { pin: 'unpinned', reason: `mutable tag :${tag}` }
 }
 
 const NPM_VALUE_FLAGS: ReadonlySet<string> = new Set(['-c', '--call', '--registry', '--cache', '--prefix', '--workspace', '-w', '--node-options'])
@@ -245,8 +265,9 @@ function classifySegment(rawTokens: string[], depth = 0): Classification {
     return classifyPythonSpec(spec)
   }
 
-  if ((head === 'docker' || head === 'podman') && rest[0] === 'run') {
-    const image = firstPositional(rest.slice(1), DOCKER_VALUE_FLAGS)
+  const runArgs = head === 'docker' || head === 'podman' ? dockerRunArgs(rest) : undefined
+  if (runArgs) {
+    const image = firstPositional(runArgs, DOCKER_VALUE_FLAGS)
     if (!image) return { pin: 'unpinned', reason: 'no image named' }
     return classifyImage(image)
   }

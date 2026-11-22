@@ -173,6 +173,35 @@ test('S4: secrets are redacted in Markdown and JSON, whatever the length', () =>
   assert.match(formatSupplyChainJson(report), /https:\/\/example\.com\/mcp\?\*\*\*/)
 })
 
+test('S5: a docker tag is pinned only for a digest or an exact version', () => {
+  for (const tag of ['main', 'stable', '1', 'v1', 'latest', '1.2']) {
+    const result = classifyCommand(`docker run --rm mcp/github:${tag}`)
+    assert.equal(result.pin, 'unpinned', tag)
+    assert.match(result.reason, /mutable tag/, tag)
+  }
+  assert.equal(pin('docker run --rm mcp/github:1.2.3'), 'pinned')
+  assert.equal(pin('docker run --rm localhost:5000/mcp/github:v1.2.3'), 'pinned')
+  assert.equal(pin('docker run --rm localhost:5000/mcp/github'), 'unpinned')
+  assert.equal(pin('docker run --rm mcp/github@sha256:abc123'), 'pinned')
+})
+
+test('S5: docker value flags are not read as the image', () => {
+  for (const flags of ['--link db:db', '--ulimit nofile=1024', '--gpus all', '--device /dev/fuse', '--log-driver none', '--pid host', '--ipc host', '--shm-size 1g', '--sysctl a=1', '--volumes-from c', '--group-add 1']) {
+    assert.equal(pin(`docker run ${flags} mcp/github:1.2.3`), 'pinned', flags)
+    assert.equal(pin(`docker run ${flags} mcp/github`), 'unpinned', flags)
+  }
+})
+
+test('S5: docker container run and global flags before run are handled', () => {
+  assert.equal(pin('docker container run --rm mcp/github'), 'unpinned')
+  assert.equal(pin('docker container run --rm mcp/github:1.2.3'), 'pinned')
+  assert.equal(pin('docker -H tcp://host:2375 run --rm mcp/github'), 'unpinned')
+  assert.equal(pin('docker --context remote run --rm mcp/github:1.2.3'), 'pinned')
+  assert.equal(pin('podman --remote run mcp/github'), 'unpinned')
+  assert.equal(pin('docker', ['--context', 'x', 'run', '-i', 'mcp/github:main']), 'unpinned')
+  assert.equal(pin('docker ps'), 'local')
+})
+
 test('S4: table cells cannot break the row or the code span', () => {
   const report = analyzeSupplyChain({
     settings: { user: { hooks: { Stop: [{ matcher: 'a\nb', hooks: [{ type: 'command', command: 'echo `x`\n| injected |\n## heading' }] }] } } },
