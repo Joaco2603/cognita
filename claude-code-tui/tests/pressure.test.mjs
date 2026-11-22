@@ -10,6 +10,7 @@ import {
   formatPressure,
   formatPressureJson,
   goalOf,
+  isPlanTool,
   levelOf,
   parsePressureSettings,
   planFromMessages,
@@ -249,4 +250,17 @@ test('the JSON report carries the numbers and recommendations', () => {
   assert.equal(json.window.percent, 75)
   assert.deepEqual(json.thresholds, { watch: 50, act: 70 })
   assert.equal(json.recommendations[0].kind, 'compact')
+})
+
+test('the desktop app plan tool sets, advances and checks off items', () => {
+  const tool = 'mcp__ccd_turn__update_plan'
+  let plan = applyPlanCall([], { tool, input: { items: [{ content: 'Map', status: 'in_progress' }, { content: 'Build', status: 'pending' }, { content: 'Ship', status: 'pending' }], scope: 'first_task' } })
+  assert.deepEqual(plan.map((item) => item.status), ['in_progress', 'pending', 'pending'])
+
+  plan = applyPlanCall(plan, { tool, input: { advance: true } })
+  assert.deepEqual(plan.map((item) => item.status), ['completed', 'in_progress', 'pending'])
+
+  plan = applyPlanCall(plan, { tool, input: { done: [2], start: 3 } })
+  assert.deepEqual(plan.map((item) => item.status), ['completed', 'completed', 'in_progress'])
+  assert.equal(isPlanTool(tool), true)
 })

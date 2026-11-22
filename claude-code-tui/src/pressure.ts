@@ -14,6 +14,28 @@ export type PlanItem = {
   status: PlanStatus
 }
 
+/**
+ * The desktop plan tool: `items` replaces the list; `done` (1-based) checks
+ * items off; `advance` completes the item in progress and starts the next
+ * pending one; `start` (1-based) starts one.
+ */
+function applyDesktopPlan(plan: readonly PlanItem[], input: Record<string, unknown>): PlanItem[] {
+  let next: PlanItem[] = Array.isArray(input.items)
+    ? input.items.map((item: any, index: number) => ({ id: String(index + 1), text: asText(item?.content), detail: '', status: statusOf(item?.status) }))
+    : [...plan]
+  const done = Array.isArray(input.done) ? input.done.map(Number) : []
+  next = next.map((item, index) => (done.includes(index + 1) ? { ...item, status: 'completed' } : item))
+  if (input.advance === true) {
+    const current = next.findIndex((item) => item.status === 'in_progress')
+    if (current >= 0) next[current] = { ...next[current], status: 'completed' }
+    const following = next.findIndex((item, index) => index > current && item.status === 'pending')
+    if (following >= 0) next[following] = { ...next[following], status: 'in_progress' }
+  }
+  const start = Number(input.start)
+  if (Number.isInteger(start) && next[start - 1]) next[start - 1] = { ...next[start - 1], status: 'in_progress' }
+  return next
+}
+
 /** A plan tool call, as `tool.call` carries it or the transcript stores it. */
 export type PlanCall = {
   tool: string
@@ -110,7 +132,9 @@ export const COMPACT_FROM_WINDOW = 30
 /** From this many prompts since the last compaction, old turns are worth summarizing. */
 export const COMPACT_FROM_PROMPTS = 15
 
-const PLAN_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
+/** The Claude desktop app's own plan tool, which replaces TodoWrite there. */
+export const DESKTOP_PLAN_TOOL = 'mcp__ccd_turn__update_plan'
+const PLAN_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate', DESKTOP_PLAN_TOOL])
 
 /** Whether a tool call can change the plan. */
 export function isPlanTool(tool: unknown): boolean {
@@ -144,6 +168,7 @@ export function applyPlanCall(plan: readonly PlanItem[], call: PlanCall): PlanIt
       status: statusOf(todo?.status),
     }))
   }
+  if (call.tool === DESKTOP_PLAN_TOOL) return call.agentId ? plan as PlanItem[] : applyDesktopPlan(plan, input)
   if (call.tool === 'TaskCreate') {
     const fromResult = call.resultText?.match(/#(\d+)/)?.[1]
     const highest = plan.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0)
