@@ -3,6 +3,7 @@
 ## Skill Routing
 
 - For terminal UI design or implementation, read `skills/rust-terminal-ui/SKILL.md` before work.
+- For any code task, read `skills/repo-graph-routing/SKILL.md` first: query the graphify graph in `graphify-out/` before reading code (`graphify update .` after code changes), and route subagents by model: opus plans, sonnet writes code, haiku reads code.
 
 ## Hackathon context
 
