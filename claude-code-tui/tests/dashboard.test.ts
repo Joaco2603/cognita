@@ -82,13 +82,13 @@ function mockSession(on: any, options: { checks?: string[]; commands?: string[];
   on('agent.list', () => ({ value: options.agents ?? [] }))
 }
 
-async function openCognita($: any, on: any, options: Parameters<typeof mockSession>[1] = {}) {
+async function openCognita($: any, on: any, options: Parameters<typeof mockSession>[1] = {}, viewport?: { columns: number; rows: number; isFullscreen?: boolean }) {
   mockSession(on, options)
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/workspace' })
   await $.command.run({ command: 'cognita', args: '' })
   // The pane fills itself in the background once it opens.
   await new Promise((resolve) => setTimeout(resolve, 20))
-  return $.ui.mount({ ...pane, surface: 'terminal' })
+  return $.ui.mount({ ...pane, surface: 'terminal', ...(viewport ? { viewport } : {}) })
 }
 
 const runningAgent = {
@@ -131,7 +131,7 @@ test('registers /cognita and keeps /inspector as an alias', async ($, on) => {
 })
 
 test('the pane opens on the Overview with four views in the sidebar', async ($, on) => {
-  const ui = await openCognita($, on)
+  const ui = await openCognita($, on, {}, { columns: 120, rows: 40, isFullscreen: false })
 
   expect(await ui.find({ text: '◆ Cognita' })).toBeDefined()
   expect(await ui.find({ key: 'tab-overview' })).toBeDefined()
@@ -141,6 +141,16 @@ test('the pane opens on the Overview with four views in the sidebar', async ($, 
   expect(await ui.find({ key: 'overview-panel' })).toBeDefined()
   expect(await ui.find({ text: 'workspace' })).toBeDefined()
   expect(await ui.find({ key: 'key-hints' })).toBeDefined()
+})
+
+test('a narrow docked pane swaps the sidebar for a row of views', async ($, on) => {
+  // 150 columns, fullscreen: the dock gets about 67 of them.
+  const ui = await openCognita($, on, {}, { columns: 150, rows: 40, isFullscreen: true })
+
+  expect(await ui.find({ key: 'tab-strip' })).toBeDefined()
+  expect(await ui.find({ key: 'sidebar-project' })).toBeUndefined()
+  await ui.press({ key: 'tab-access' })
+  expect(await ui.find({ key: 'access-panel' })).toBeDefined()
 })
 
 test('the Overview sums up access and flags risky actions that run without asking', async ($, on) => {

@@ -19,7 +19,7 @@ export function renderAccess(ui, options) {
         columnGap: 1,
         children: [
             Box({ flexGrow: 1, flexShrink: 1, children: [Text({ children: [label], wrap: 'truncate-end' })] }),
-            Text({ children: [value], bold: true, color }),
+            Box({ flexShrink: 0, children: [Text({ children: [value], bold: true, color })] }),
             extra === undefined ? null : Text({ children: [extra], dimColor: true }),
         ],
     });

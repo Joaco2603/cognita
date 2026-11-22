@@ -27,7 +27,7 @@ Then run `/cognita` in a new session.
 
 ## What it looks like
 
-**Demo video (77 s):** [`demo/cognita-demo.mp4`](./demo/cognita-demo.mp4). It shows the Overview, `/cognita access` catching `.env` reads, the one-line fix, and `/cognita trim`.
+**Live demo video (81 s, voiced):** [English](./demo/cognita-demo-en.mp4) · [Español](./demo/cognita-demo-es.mp4). It is a screen recording of a real Claude Code session: the Overview, `/cognita access` catching `.env` reads, the deny rule added live, the re-check showing it blocked, and `/cognita trim`.
 
 Real output of `/cognita access`, trimmed and with the home path shortened:
 
@@ -89,7 +89,7 @@ Start a new Claude Code session and run `/cognita`. Requires Claude Code 2.1.275
 
 ```bash
 cd claude-code-tui
-npm test           # build + 37 node unit tests + 27 pane tests (claude plugin test)
+npm test           # build + 37 node unit tests + 28 pane tests (claude plugin test)
 npm run validate   # claude plugin validate .
 ```
 

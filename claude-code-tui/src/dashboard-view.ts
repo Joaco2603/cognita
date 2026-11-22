@@ -55,7 +55,7 @@ export function renderSidebar(ui: UiComponents, options: {
           ...TABS.map(({ tab, label, hotkey }) =>
             Button({
               key: `tab-${tab}`,
-              label: `${options.activeTab === tab ? '▸' : ' '} ${hotkey} ${label}`,
+              label: `${options.activeTab === tab ? '▸' : ' '} ${label}`,
               hotkey,
               plain: true,
               bold: options.activeTab === tab,
@@ -66,6 +66,33 @@ export function renderSidebar(ui: UiComponents, options: {
       }),
       Text({ key: 'sidebar-hint', children: [TAB_HINTS[options.activeTab]], dimColor: true, wrap: 'wrap' }),
       Text({ children: ['Esc closes'], dimColor: true }),
+    ],
+  })
+}
+
+/** One row of view buttons, for a pane too narrow for the sidebar. */
+export function renderTabStrip(ui: UiComponents, options: {
+  activeTab: DashboardTab
+  onTabSelect: (tab: DashboardTab) => void
+}): unknown {
+  const { Box, Button, Text } = ui
+  return Box({
+    key: 'tab-strip',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: 2,
+    children: [
+      Text({ key: 'brand', children: ['◆ Cognita'], bold: true, color: ACCENT }),
+      ...TABS.map(({ tab, label, hotkey }) =>
+        Button({
+          key: `tab-${tab}`,
+          label: `${options.activeTab === tab ? '▸' : ' '} ${label}`,
+          hotkey,
+          plain: true,
+          bold: options.activeTab === tab,
+          dimColor: options.activeTab !== tab,
+          onPress: () => options.onTabSelect(tab),
+        })),
     ],
   })
 }
@@ -168,7 +195,7 @@ export function renderOverview(ui: UiComponents, options: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         children: [
-          Text({ children: ['WHAT YOUR AGENT SEES AND CAN DO'], bold: true }),
+          Box({ flexShrink: 1, children: [Text({ children: ['WHAT YOUR AGENT SEES AND CAN DO'], bold: true, wrap: 'truncate-end' })] }),
           Button({
             key: 'overview-refresh',
             label: options.loading ? '↻ Checking…' : '↻ Refresh',
