@@ -242,7 +242,7 @@ async function readConversation($, state) {
         }
     }
     const prompts = promptsOf(messages);
-    state.tagged = mergeTagged(state.tagged, extractTagged(prompts));
+    state.tagged = mergeTagged(state.tagged, extractTagged(prompts, state.tagged));
     return { plan: state.plan, prompts, engramTool: engramSaveTool(tools.map((tool) => tool.name)) };
 }
 /** Reads the pressure and keeps it for the pane and the status line. */
@@ -862,7 +862,7 @@ async function keepTagged($, state, event, next) {
     try {
         if (event.agentId === undefined) {
             const messages = Array.isArray(event.messages) ? event.messages : [];
-            items = state.tagged = mergeTagged(state.tagged, extractTagged(promptsOf(messages)));
+            items = state.tagged = mergeTagged(state.tagged, extractTagged(promptsOf(messages), state.tagged));
             const instructions = withTaggedInstructions(typeof event.instructions === 'string' ? event.instructions : undefined, items);
             if (instructions !== event.instructions)
                 forwarded = { ...event, instructions };

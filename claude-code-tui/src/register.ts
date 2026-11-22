@@ -386,7 +386,7 @@ async function readConversation($: ModApi, state: State): Promise<Omit<PressureI
     }
   }
   const prompts = promptsOf(messages)
-  state.tagged = mergeTagged(state.tagged, extractTagged(prompts))
+  state.tagged = mergeTagged(state.tagged, extractTagged(prompts, state.tagged))
   return { plan: state.plan, prompts, engramTool: engramSaveTool(tools.map((tool) => tool.name)) }
 }
 
@@ -1000,7 +1000,7 @@ async function keepTagged($: ModApi, state: State, event: ModEvent, next?: ModNe
   try {
     if (event.agentId === undefined) {
       const messages = Array.isArray(event.messages) ? event.messages as SessionMessageSummary[] : []
-      items = state.tagged = mergeTagged(state.tagged, extractTagged(promptsOf(messages)))
+      items = state.tagged = mergeTagged(state.tagged, extractTagged(promptsOf(messages), state.tagged))
       const instructions = withTaggedInstructions(typeof event.instructions === 'string' ? event.instructions : undefined, items)
       if (instructions !== event.instructions) forwarded = { ...event, instructions }
     }

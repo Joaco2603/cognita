@@ -107,3 +107,18 @@ test('the report lists each item with its share and the last retention', () => {
   assert.match(retention, /o1 \(open\): lost/)
   assert.equal(formatTagged(focusOf([], 1000)).length, 0)
 })
+
+test('after a compaction, a new tagged item never takes the id of one kept from before', () => {
+  const before = extractTagged(['<decision>Use Postgres</decision>'])
+  // The compaction dropped the prompt that held d1; a new decision arrives.
+  const after = extractTagged(['<decision>Ship on Friday</decision>'], before)
+  assert.deepEqual(after.map((item) => [item.id, item.text]), [['d2', 'Ship on Friday']])
+  const merged = mergeTagged(before, after)
+  assert.deepEqual(merged.map((item) => [item.id, item.text]), [['d1', 'Use Postgres'], ['d2', 'Ship on Friday']])
+})
+
+test('an item seen before keeps its id when the prompts are read again', () => {
+  const before = extractTagged(['<decision>Use Postgres</decision> <open>Docs</open>'])
+  const again = extractTagged(['<decision>Use Postgres</decision> <open>Docs</open> <decision>Ship on Friday</decision>'], before)
+  assert.deepEqual(again.map((item) => item.id), ['d1', 'o1', 'd2'])
+})

@@ -28,8 +28,11 @@ const countWords = (text: string) => text.split(/\s+/).filter(Boolean).length
 /**
  * Every tagged item in the prompts, oldest first. An explicit `id` stays; the
  * rest are numbered by kind (`d1`, `d2`, `c1`) skipping ids already taken.
+ * `previous` holds the items seen before, which a compaction may have dropped
+ * from the prompts: an item seen before keeps its id, and a new one never
+ * takes the id of an old one.
  */
-export function extractTagged(prompts: readonly string[]): TaggedItem[] {
+export function extractTagged(prompts: readonly string[], previous: readonly TaggedItem[] = []): TaggedItem[] {
   const found: Array<{ kind: TagKind; id?: string; text: string }> = []
   for (const prompt of prompts) {
     for (const match of prompt.matchAll(TAG)) {
@@ -37,15 +40,18 @@ export function extractTagged(prompts: readonly string[]): TaggedItem[] {
       if (text) found.push({ kind: match[1].toLowerCase() as TagKind, id: match[2]?.trim() || undefined, text })
     }
   }
-  const taken = new Set(found.map((item) => item.id).filter(Boolean))
+  const taken = new Set([...found.map((item) => item.id), ...previous.map((item) => item.id)].filter(Boolean))
   const counters: Record<TagKind, number> = { important: 0, decision: 0, open: 0, constraint: 0 }
+  const used = new Set<string>()
   return found.map((item) => {
-    let id = item.id
-    while (!id || (id !== item.id && taken.has(id))) {
+    const seen = item.id ? undefined : previous.find((old) => old.kind === item.kind && old.text === item.text && !used.has(old.id))
+    let id = item.id ?? seen?.id
+    while (!id || (id !== item.id && id !== seen?.id && taken.has(id))) {
       counters[item.kind] += 1
       id = `${ID_PREFIX[item.kind]}${counters[item.kind]}`
     }
     taken.add(id)
+    used.add(id)
     return { id, kind: item.kind, text: item.text, words: countWords(item.text) }
   })
 }
