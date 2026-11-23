@@ -2,7 +2,7 @@
 
 **See everything your Claude Code agent has access to.**
 
-![Cognita in a real Claude Code session: the Overview, what fills the context window, and a risky action that runs without asking](./demo/cognita-demo.gif)
+![Cognita in a real Claude Code session: the Overview, what fills the context window, and a risky action that runs without asking](./landing-page/public/media/cognita-demo.gif)
 
 **Found in real sessions:** reading `.env` ran without asking until one deny rule blocked it; a plugin with 16 skills was loaded and never used (~1,080 tokens every session); holding unused MCP servers took a session from 55,505 to 52,861 tokens before the first message.
 
@@ -33,7 +33,7 @@ Then run `/cognita` in a new session.
 
 ## What it looks like
 
-**Live demo video (96 s, voiced):** [English](./demo/cognita-demo-en.mp4) · [Español](./demo/cognita-demo-es.mp4). A short intro explains what Claude Code loads and the three things Cognita shows, then a screen recording of a real Claude Code session, with zooms and highlights on each finding: the Overview, `/cognita access` catching `.env` reads, the deny rule added live, the re-check showing it blocked, and `/cognita trim`.
+**Live demo video (96 s, voiced):** [English](./landing-page/public/media/cognita-demo-en.mp4) · [Español](./landing-page/public/media/cognita-demo-es.mp4). A short intro explains what Claude Code loads and the three things Cognita shows, then a screen recording of a real Claude Code session, with zooms and highlights on each finding: the Overview, `/cognita access` catching `.env` reads, the deny rule added live, the re-check showing it blocked, and `/cognita trim`.
 
 Real output of `/cognita access`, trimmed and with the home path shortened:
 
@@ -108,7 +108,7 @@ Start a new Claude Code session and run `/cognita`. Requires Claude Code 2.1.275
 | [`claude-code-tui/`](./claude-code-tui) | The Cognita plugin: TypeScript sources, compiled hooks, tests |
 | [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) | The marketplace entry for one-step install |
 | [`HACKATHON.md`](./HACKATHON.md) | Dojo AI Hackathon context: criteria, baseline, progress log, checklist |
-| [`demo/`](./demo) | The demo video and its HyperFrames source |
+| [`landing-page/`](./landing-page) | Next.js landing page with an interactive terminal demo and the demo videos |
 | [`skills/`](./skills) | Local skills used while building |
 | [`graphify-out/`](./graphify-out) | A generated graph of the code |
 
