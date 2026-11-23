@@ -313,8 +313,12 @@ async function checkPressure($, state) {
  * holds, so the commands answer at once and act on a dispatch of their own.
  */
 const AFTER_COMMAND_MS = 100;
-/** Compacts with the given focus and says how it went in a toast. */
-async function compactNow($, state, focus) {
+/**
+ * Compacts with the given focus and says how it went in a toast. The host
+ * refuses to compact while a turn runs, so a first refusal waits for the
+ * turn to end and tries once more; a second one prints the fallback.
+ */
+async function compactNow($, state, focus, isRetry = false) {
     if (state.compacting)
         return;
     state.compacting = true;
@@ -334,7 +338,13 @@ async function compactNow($, state, focus) {
         }
     }
     catch {
-        await $.ui.toast('Could not compact now (a turn may be running). Run the /compact line /cognita compact printed.');
+        if (isRetry) {
+            await $.ui.toast('Could not compact now. Run the /compact line /cognita compact printed.');
+        }
+        else {
+            state.pendingCompaction = focus;
+            await $.ui.toast('A turn is running; cognita will compact when it ends.');
+        }
     }
     finally {
         state.compacting = false;
@@ -798,8 +808,17 @@ export function register(on) {
     on('turn.complete', async ($, event, next) => {
         const result = await next?.(event);
         const isWatching = state.pressureSettings.isAlertEnabled || state.isStatusLineEnabled;
-        if (isWatching && event.agentId === undefined && event.isAborted !== true)
+        if (event.agentId !== undefined)
+            return result;
+        const pending = state.pendingCompaction;
+        if (pending !== undefined) {
+            state.pendingCompaction = undefined;
+            // The turn is still closing while this hook runs; compact once it has.
+            afterCommand($, () => compactNow($, state, pending, true));
+        }
+        else if (isWatching && event.isAborted !== true) {
             void checkPressure($, state);
+        }
         return result;
     });
     on('skill.prompt', ($, event, next) => {

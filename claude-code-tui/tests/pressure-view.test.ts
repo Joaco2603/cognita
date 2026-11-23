@@ -214,7 +214,34 @@ test('/cognita compact prints the /compact line and warns when it cannot compact
 
   expect(text).toContain(`If it does not start, run:\n\n\`\`\`\n/compact Keep: the goal "${GOAL}"`)
   await clock.advance(200)
-  expect(session.toasts?.[0]).toContain('Could not compact now')
+  expect(session.toasts?.[0]).toContain('A turn is running')
+
+  // The turn ends but compacting still fails: print the fallback once.
+  await endTurn($)
+  await clock.advance(200)
+  expect(session.compacted).toEqual(undefined)
+  expect(session.toasts?.[1]).toContain('Could not compact now')
+})
+
+test('/cognita compact waits for a running turn to end, then compacts', async ($, on) => {
+  const session: Session = { percent: 75, messages: transcript, compactFails: true, compacted: [], toasts: [] }
+  const clock = await start($, on, session)
+  await run($, 'compact')
+  await clock.advance(200)
+  expect(session.compacted).toEqual([])
+  expect(session.toasts).toEqual(['A turn is running; cognita will compact when it ends.'])
+
+  session.compactFails = false
+  await endTurn($)
+  await clock.advance(200)
+  expect(session.compacted?.length).toBe(1)
+  expect(session.compacted?.[0]).toContain(`Keep: the goal "${GOAL}"`)
+  expect(session.toasts?.[1]).toBe('Compacted, keeping the goal and the open plan.')
+
+  // Nothing stays pending: the next turn does not compact again.
+  await endTurn($)
+  await clock.advance(200)
+  expect(session.compacted?.length).toBe(1)
 })
 
 test('/cognita split sends the prompt that hands the pending items to subagents', async ($, on) => {
