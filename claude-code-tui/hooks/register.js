@@ -10,6 +10,7 @@ import { renderOverview, renderSidebar, renderTabStrip } from './dashboard-view.
 import { createLazyMcp } from './lazy-mcp.js';
 import { DEFAULT_GROWTH_ALERT, diffLoadout, emptyUsage, formatHistory, formatJson, formatTrimPlan, formatReport, mcpServerOf, measurePrompt, recordSkillUse, recordToolCall, parseTokens, rememberSnapshot, sinceBadge, startupAlert, summarize, toSnapshot, trendOf, } from './loadout.js';
 import { DEFAULT_PRESSURE, applyPlanCall, compactFocus, engramPrompt, engramSaveTool, formatPressure, formatPressureJson, isPlanTool, parsePressureSettings, planFromMessages, pressureAlert, pressureBadge, pressureOf, promptsOf, recommend, splitPrompt, } from './pressure.js';
+import { renderPressureTab } from './pressure-view.js';
 import { extractTagged, focusOf, formatRetention, formatTagged, mergeTagged, retentionAlert, retentionOf, withTaggedInstructions, } from './tags.js';
 import { basename, } from './utils.js';
 const PANE_ID = 'cognita';
@@ -30,7 +31,7 @@ const HELP = [
     '- `/cognita pressure`: how hard the context is working (window plus an attention estimate) and the step that relieves it (`json` for scripts)',
     '- `/cognita compact`: compact now, keeping the goal and the open plan',
     '- `/cognita save` · `/cognita split`: send the prompt that saves decisions to Engram, or that hands the plan to subagents',
-    '- `/cognita context` · `/cognita access open`: open the pane on that view',
+    '- `/cognita context` · `/cognita access open` · `/cognita pressure open`: open the pane on that view',
     '- `/cognita hold [server]`: keep an MCP server off from the next session in this project (no name lists the held ones)',
     '- `/cognita connect [server]`: bring a held server back for this session (no name connects every held one)',
     '- `/cognita release <server|all>`: stop holding it, so it loads at every start again',
@@ -179,10 +180,18 @@ function openTab($, state, tab) {
         void refreshLoadout($, state, 'summary');
     if (tab === 'access' && !state.access)
         void refreshAccess($, state);
+    if (tab === 'pressure')
+        void refreshPressureTab($, state);
     if (tab === 'agents') {
         state.agentSubview = 'active';
         void refreshAgents($, state);
     }
+}
+/** The Pressure view measures the window first when nothing has, then the conversation. */
+async function refreshPressureTab($, state) {
+    if (!state.loadout)
+        await refreshLoadout($, state, 'summary');
+    await refreshPressureView($, state);
 }
 /**
  * One quick measurement in the background at startup: it saves this session's
@@ -253,6 +262,7 @@ async function refreshPressure($, state, window) {
     const recommendations = recommend(pressure, input);
     state.pressure = pressure;
     state.recommendations = recommendations;
+    state.compactPreview = withTaggedInstructions(compactFocus(input), state.tagged);
     return { input, pressure, recommendations };
 }
 /** The pane's reading reuses the loadout's window count, so it asks Claude Code for nothing more. */
@@ -311,6 +321,9 @@ async function compactNow($, state, focus) {
     $.ui.invalidate('ui.render');
     try {
         const result = await $.session.compact({ instructions: focus });
+        // A plugin's own compaction does not pass through its own session.compact hook.
+        if (Array.isArray(result?.messages))
+            recordCompaction($, state, state.tagged, 'cognita', result.messages);
         if (result?.skip) {
             await $.ui.toast(`Compaction skipped: ${result.skip}`);
         }
@@ -512,7 +525,7 @@ async function runCommand($, state, event) {
             return { text: 'Could not read the loadout history for this project.' };
         }
     }
-    if (subcommand === 'pressure') {
+    if (subcommand === 'pressure' && !options.has('open')) {
         try {
             const { pressure, recommendations } = await refreshPressure($, state);
             if (options.has('json'))
@@ -541,7 +554,7 @@ async function runCommand($, state, event) {
         }
         return sendCommand($, splitPrompt(plan));
     }
-    if (subcommand === 'context' || subcommand === 'access' || subcommand === 'agents' || subcommand === 'overview') {
+    if (subcommand === 'context' || subcommand === 'access' || subcommand === 'agents' || subcommand === 'overview' || subcommand === 'pressure') {
         state.activeTab = subcommand;
     }
     else if (subcommand) {
@@ -597,6 +610,20 @@ function renderPane($, state, event) {
             error: [state.contextError, state.accessError].filter(Boolean).join(' '),
             onRefresh: () => void refreshAll($, state),
             onOpen: select,
+        });
+    }
+    else if (state.activeTab === 'pressure') {
+        content = renderPressureTab(ui, {
+            pressure: state.pressure,
+            recommendations: state.recommendations,
+            tagged: focusOf(state.tagged, state.pressure?.windowTokens),
+            retention: state.retention,
+            lastCompaction: state.lastCompaction,
+            focus: state.compactPreview,
+            loading: state.measuring || state.checkingPressure,
+            compacting: state.compacting,
+            onCompact: () => void compactFromPane($, state),
+            onRefresh: () => void refreshLoadout($, state, state.loadoutDetail).then(() => refreshPressureView($, state)),
         });
     }
     else if (state.activeTab === 'context') {
@@ -860,6 +887,15 @@ async function trackPlan(state, event, next) {
     }
     return result;
 }
+/** Notes when a compaction ran and which tagged items its summary kept; toasts what it lost. */
+function recordCompaction($, state, items, trigger, kept) {
+    state.lastCompaction = { at: new Date().toLocaleTimeString(), trigger };
+    state.retention = items.length > 0 ? retentionOf(items, kept.map((message) => message.text ?? '').join('\n')) : undefined;
+    const alert = state.retention ? retentionAlert(state.retention) : undefined;
+    if (alert)
+        void $.ui.toast(alert);
+    $.ui.invalidate('ui.render');
+}
 async function keepTagged($, state, event, next) {
     let items = [];
     let forwarded = event;
@@ -879,12 +915,8 @@ async function keepTagged($, state, event, next) {
     const result = await next?.(forwarded);
     try {
         const kept = result?.messages;
-        if (items.length > 0 && Array.isArray(kept) && event.trigger !== 'precompute') {
-            state.retention = retentionOf(items, kept.map((message) => message.text ?? '').join('\n'));
-            const alert = retentionAlert(state.retention);
-            if (alert)
-                void $.ui.toast(alert);
-            $.ui.invalidate('ui.render');
+        if (event.agentId === undefined && Array.isArray(kept) && event.trigger !== 'precompute') {
+            recordCompaction($, state, items, String(event.trigger ?? 'manual'), kept);
         }
     }
     catch {

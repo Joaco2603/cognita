@@ -1,4 +1,4 @@
-export type DashboardTab = 'overview' | 'context' | 'access' | 'agents'
+export type DashboardTab = 'overview' | 'context' | 'access' | 'agents' | 'pressure'
 export type AgentSubview = 'active' | 'inactive' | 'detail' | 'launch'
 export type ContextSubview = 'overview' | 'memory' | 'mcp' | 'skills' | 'prompt'
 export type AccessSubview = 'actions' | 'tools' | 'rules' | 'hooks'
