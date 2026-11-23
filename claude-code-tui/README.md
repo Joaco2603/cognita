@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/Joaco2603/cognita/actions/workflows/ci.yml/badge.svg)](https://github.com/Joaco2603/cognita/actions/workflows/ci.yml) · [Changelog](./CHANGELOG.md)
 
+![Cognita in a real Claude Code session: the Overview, what fills the context window, and a risky action that runs without asking](https://raw.githubusercontent.com/Joaco2603/cognita/main/demo/cognita-demo.gif)
+
 **See everything your Claude Code agent has access to.** Cognita is a Claude Code plugin that answers two questions inside the session you are already in:
 
 1. **What has my agent loaded?** What fills the context window before you type: CLAUDE.md files, MCP servers, skills, system prompt sections. What it never uses, and the exact commands to trim it.

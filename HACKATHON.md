@@ -163,7 +163,8 @@ Registrarlo en la sección siguiente para la entrega.
 
 - [x] Nombre comercial y descripción de una línea pensada para el Marketplace
 - [x] README con propuesta de valor, salida real, instalación y troubleshooting (con video demo)
-- [x] Instalación probada desde cero en Windows y Linux (Docker `node:22`); macOS sin máquina para probar, el plugin no usa nada específico de plataforma
+- [x] Instalación probada desde cero en Windows y Linux (Docker `node:22`); macOS cubierto por el CI (Linux, macOS y Windows en cada push)
+- [x] GIF en el README (raíz y plugin) armado a partir de la grabación real
 - [x] `npm run build`, `npm test` y `npm run validate` en verde
 - [x] Sección "Cómo usamos AI coding" en la entrega
 - [x] Diferencia entre línea base y avance del hackathon documentada
