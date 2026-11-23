@@ -182,7 +182,7 @@ type State = {
   pressureLevel: PressureLevel
   checkingPressure: boolean
   compacting: boolean
-  /** A compaction refused while a turn ran, retried once when the turn ends. */
+  /** A compaction refused while a turn ran: retried on a timer, and a last time when a turn ends. */
   pendingCompaction?: string
   /** What the person tagged (important, decision, open, constraint), kept across compactions. */
   tagged: TaggedItem[]
@@ -460,18 +460,23 @@ async function checkPressure($: ModApi, state: State): Promise<void> {
  */
 const AFTER_COMMAND_MS = 100
 
+/** How often a pending compaction tries again while the host refuses it. */
+const COMPACT_RETRY_MS = 2000
+
 /**
  * Compacts with the given focus and says how it went in a toast. The host
- * refuses to compact while a turn runs, so a first refusal waits for the
- * turn to end and tries once more; a second one prints the fallback.
+ * refuses to compact while a turn runs (a slash command's own included, which
+ * ends with no `turn.complete`), so a refusal keeps the compaction pending and
+ * tries again on a timer; a refusal after a turn has ended prints the fallback.
  */
-async function compactNow($: ModApi, state: State, focus: string, isRetry = false): Promise<void> {
+async function compactNow($: ModApi, state: State, focus: string, isLastTry = false): Promise<void> {
   if (state.compacting) return
   state.compacting = true
   $.ui.invalidate('ui.render')
   try {
     const result = await $.session.compact({ instructions: focus }) as { skip?: string; messages?: SessionMessageSummary[] }
     // A plugin's own compaction does not pass through its own session.compact hook.
+    state.pendingCompaction = undefined
     if (Array.isArray(result?.messages)) recordCompaction($, state, state.tagged, 'cognita', result.messages)
     if (result?.skip) {
       await $.ui.toast(`Compaction skipped: ${result.skip}`)
@@ -481,15 +486,30 @@ async function compactNow($: ModApi, state: State, focus: string, isRetry = fals
       await refreshPressure($, state).catch(() => undefined)
     }
   } catch {
-    if (isRetry) {
+    if (isLastTry) {
+      state.pendingCompaction = undefined
       await $.ui.toast('Could not compact now. Run the /compact line /cognita compact printed.')
     } else {
+      const isFirstRefusal = state.pendingCompaction === undefined
       state.pendingCompaction = focus
-      await $.ui.toast('A turn is running; cognita will compact when it ends.')
+      if (isFirstRefusal) await $.ui.toast('A turn is running; cognita will compact when it ends.')
+      retryPendingLater($, state)
     }
   } finally {
     state.compacting = false
     $.ui.invalidate('ui.render')
+  }
+}
+
+/** Tries the pending compaction again after a pause, unless it ran meanwhile. */
+function retryPendingLater($: ModApi, state: State): void {
+  try {
+    $.clock.after(COMPACT_RETRY_MS, () => {
+      const pending = state.pendingCompaction
+      if (pending !== undefined) void compactNow($, state, pending).catch(() => undefined)
+    })
+  } catch {
+    // No timer: the end of the next turn retries it.
   }
 }
 
@@ -954,8 +974,8 @@ export function register(on: ModOn): void {
     if (event.agentId !== undefined) return result
     const pending = state.pendingCompaction
     if (pending !== undefined) {
-      state.pendingCompaction = undefined
       // The turn is still closing while this hook runs; compact once it has.
+      // compactNow clears the pending focus when it compacts or gives up.
       afterCommand($, () => compactNow($, state, pending, true))
     } else if (isWatching && event.isAborted !== true) {
       void checkPressure($, state)

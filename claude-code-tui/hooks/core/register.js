@@ -313,12 +313,15 @@ async function checkPressure($, state) {
  * holds, so the commands answer at once and act on a dispatch of their own.
  */
 const AFTER_COMMAND_MS = 100;
+/** How often a pending compaction tries again while the host refuses it. */
+const COMPACT_RETRY_MS = 2000;
 /**
  * Compacts with the given focus and says how it went in a toast. The host
- * refuses to compact while a turn runs, so a first refusal waits for the
- * turn to end and tries once more; a second one prints the fallback.
+ * refuses to compact while a turn runs (a slash command's own included, which
+ * ends with no `turn.complete`), so a refusal keeps the compaction pending and
+ * tries again on a timer; a refusal after a turn has ended prints the fallback.
  */
-async function compactNow($, state, focus, isRetry = false) {
+async function compactNow($, state, focus, isLastTry = false) {
     if (state.compacting)
         return;
     state.compacting = true;
@@ -326,6 +329,7 @@ async function compactNow($, state, focus, isRetry = false) {
     try {
         const result = await $.session.compact({ instructions: focus });
         // A plugin's own compaction does not pass through its own session.compact hook.
+        state.pendingCompaction = undefined;
         if (Array.isArray(result?.messages))
             recordCompaction($, state, state.tagged, 'cognita', result.messages);
         if (result?.skip) {
@@ -338,17 +342,34 @@ async function compactNow($, state, focus, isRetry = false) {
         }
     }
     catch {
-        if (isRetry) {
+        if (isLastTry) {
+            state.pendingCompaction = undefined;
             await $.ui.toast('Could not compact now. Run the /compact line /cognita compact printed.');
         }
         else {
+            const isFirstRefusal = state.pendingCompaction === undefined;
             state.pendingCompaction = focus;
-            await $.ui.toast('A turn is running; cognita will compact when it ends.');
+            if (isFirstRefusal)
+                await $.ui.toast('A turn is running; cognita will compact when it ends.');
+            retryPendingLater($, state);
         }
     }
     finally {
         state.compacting = false;
         $.ui.invalidate('ui.render');
+    }
+}
+/** Tries the pending compaction again after a pause, unless it ran meanwhile. */
+function retryPendingLater($, state) {
+    try {
+        $.clock.after(COMPACT_RETRY_MS, () => {
+            const pending = state.pendingCompaction;
+            if (pending !== undefined)
+                void compactNow($, state, pending).catch(() => undefined);
+        });
+    }
+    catch {
+        // No timer: the end of the next turn retries it.
     }
 }
 /** Submits a prompt as the person's next turn, or says it could not. */
@@ -812,8 +833,8 @@ export function register(on) {
             return result;
         const pending = state.pendingCompaction;
         if (pending !== undefined) {
-            state.pendingCompaction = undefined;
             // The turn is still closing while this hook runs; compact once it has.
+            // compactNow clears the pending focus when it compacts or gives up.
             afterCommand($, () => compactNow($, state, pending, true));
         }
         else if (isWatching && event.isAborted !== true) {

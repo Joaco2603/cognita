@@ -244,6 +244,27 @@ test('/cognita compact waits for a running turn to end, then compacts', async ($
   expect(session.compacted?.length).toBe(1)
 })
 
+test('/cognita compact retries on its own once the host lets it, with no turn ending', async ($, on) => {
+  const session: Session = { percent: 75, messages: transcript, compactFails: true, compacted: [], toasts: [] }
+  const clock = await start($, on, session)
+  await run($, 'compact')
+  await clock.advance(200)
+  await clock.advance(2000)
+  await clock.advance(2000)
+  expect(session.compacted).toEqual([])
+  expect(session.toasts).toEqual(['A turn is running; cognita will compact when it ends.'])
+
+  session.compactFails = false
+  await clock.advance(2000)
+  expect(session.compacted?.length).toBe(1)
+  expect(session.toasts?.[1]).toBe('Compacted, keeping the goal and the open plan.')
+
+  await clock.advance(2000)
+  await endTurn($)
+  await clock.advance(2000)
+  expect(session.compacted?.length).toBe(1)
+})
+
 test('/cognita split sends the prompt that hands the pending items to subagents', async ($, on) => {
   const session: Session = { percent: 40, messages: transcript, submitted: [] }
   const clock = await start($, on, session)
