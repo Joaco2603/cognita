@@ -48,6 +48,7 @@ export default function Home() {
           <a href="#try">Try it</a>
           <a href="#demo">Demo</a>
           <a href="#install">Install</a>
+          <a href="/pitch">Pitch</a>
           <a href={REPO} target="_blank" rel="noreferrer" className="nav-cta">
             GitHub ↗
           </a>
