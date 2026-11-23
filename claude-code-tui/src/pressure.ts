@@ -231,7 +231,9 @@ function shorten(text: string, max: number): string {
 
 /** The current goal: the latest prompt with a few words in it ("yes, go" is not a goal). */
 export function goalOf(prompts: readonly string[]): string {
-  const goal = [...prompts].reverse().find((prompt) => wordCount(prompt) >= 4)
+  // Tagged items go to the summary by id; the goal is the rest of the prompt.
+  const untagged = prompts.map((prompt) => prompt.replace(/<(important|decision|open|constraint)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' '))
+  const goal = [...untagged].reverse().find((prompt) => wordCount(prompt) >= 4)
   return goal ? shorten(goal, 160).replaceAll('"', "'") : ''
 }
 

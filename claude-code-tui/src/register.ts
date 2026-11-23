@@ -68,6 +68,7 @@ import {
   type PressureSettings,
   type Recommendation,
 } from './pressure.js'
+import { renderPressureTab, type CompactionRecord } from './pressure-view.js'
 import {
   extractTagged,
   focusOf,
@@ -108,7 +109,7 @@ const HELP = [
   '- `/cognita pressure`: how hard the context is working (window plus an attention estimate) and the step that relieves it (`json` for scripts)',
   '- `/cognita compact`: compact now, keeping the goal and the open plan',
   '- `/cognita save` · `/cognita split`: send the prompt that saves decisions to Engram, or that hands the plan to subagents',
-  '- `/cognita context` · `/cognita access open`: open the pane on that view',
+  '- `/cognita context` · `/cognita access open` · `/cognita pressure open`: open the pane on that view',
   '- `/cognita hold [server]`: keep an MCP server off from the next session in this project (no name lists the held ones)',
   '- `/cognita connect [server]`: bring a held server back for this session (no name connects every held one)',
   '- `/cognita release <server|all>`: stop holding it, so it loads at every start again',
@@ -185,6 +186,10 @@ type State = {
   tagged: TaggedItem[]
   /** Which tagged items the last compaction kept. */
   retention?: Retention
+  /** When the last compaction of the main conversation ran, and who started it. */
+  lastCompaction?: CompactionRecord
+  /** The instructions compacting now would send, for the Pressure view. */
+  compactPreview?: string
 }
 
 function createState(): State {
@@ -324,10 +329,17 @@ function openTab($: ModApi, state: State, tab: DashboardTab): void {
   $.ui.invalidate('ui.render')
   if (tab === 'context' && !state.loadout) void refreshLoadout($, state, 'summary')
   if (tab === 'access' && !state.access) void refreshAccess($, state)
+  if (tab === 'pressure') void refreshPressureTab($, state)
   if (tab === 'agents') {
     state.agentSubview = 'active'
     void refreshAgents($, state)
   }
+}
+
+/** The Pressure view measures the window first when nothing has, then the conversation. */
+async function refreshPressureTab($: ModApi, state: State): Promise<void> {
+  if (!state.loadout) await refreshLoadout($, state, 'summary')
+  await refreshPressureView($, state)
 }
 
 /**
@@ -398,6 +410,7 @@ async function refreshPressure($: ModApi, state: State, window?: WindowReading):
   const recommendations = recommend(pressure, input)
   state.pressure = pressure
   state.recommendations = recommendations
+  state.compactPreview = withTaggedInstructions(compactFocus(input), state.tagged)
   return { input, pressure, recommendations }
 }
 
@@ -451,7 +464,9 @@ async function compactNow($: ModApi, state: State, focus: string): Promise<void>
   state.compacting = true
   $.ui.invalidate('ui.render')
   try {
-    const result = await $.session.compact({ instructions: focus })
+    const result = await $.session.compact({ instructions: focus }) as { skip?: string; messages?: SessionMessageSummary[] }
+    // A plugin's own compaction does not pass through its own session.compact hook.
+    if (Array.isArray(result?.messages)) recordCompaction($, state, state.tagged, 'cognita', result.messages)
     if (result?.skip) {
       await $.ui.toast(`Compaction skipped: ${result.skip}`)
     } else {
@@ -649,7 +664,7 @@ async function runCommand($: ModApi, state: State, event: ModEvent): Promise<Com
     }
   }
 
-  if (subcommand === 'pressure') {
+  if (subcommand === 'pressure' && !options.has('open')) {
     try {
       const { pressure, recommendations } = await refreshPressure($, state)
       if (options.has('json')) return { text: '```json\n' + formatPressureJson(pressure, recommendations, state.pressureSettings) + '\n```' }
@@ -679,7 +694,7 @@ async function runCommand($: ModApi, state: State, event: ModEvent): Promise<Com
     return sendCommand($, splitPrompt(plan))
   }
 
-  if (subcommand === 'context' || subcommand === 'access' || subcommand === 'agents' || subcommand === 'overview') {
+  if (subcommand === 'context' || subcommand === 'access' || subcommand === 'agents' || subcommand === 'overview' || subcommand === 'pressure') {
     state.activeTab = subcommand
   } else if (subcommand) {
     return { text: `Unknown option "${subcommand}".\n\n${HELP}` }
@@ -736,6 +751,19 @@ function renderPane($: ModApi, state: State, event: ModEvent): unknown {
       error: [state.contextError, state.accessError].filter(Boolean).join(' '),
       onRefresh: () => void refreshAll($, state),
       onOpen: select,
+    })
+  } else if (state.activeTab === 'pressure') {
+    content = renderPressureTab(ui, {
+      pressure: state.pressure,
+      recommendations: state.recommendations,
+      tagged: focusOf(state.tagged, state.pressure?.windowTokens),
+      retention: state.retention,
+      lastCompaction: state.lastCompaction,
+      focus: state.compactPreview,
+      loading: state.measuring || state.checkingPressure,
+      compacting: state.compacting,
+      onCompact: () => void compactFromPane($, state),
+      onRefresh: () => void refreshLoadout($, state, state.loadoutDetail).then(() => refreshPressureView($, state)),
     })
   } else if (state.activeTab === 'context') {
     content = renderContext(ui, {
@@ -999,6 +1027,15 @@ async function trackPlan(state: State, event: ModEvent, next?: ModNext): Promise
   return result
 }
 
+/** Notes when a compaction ran and which tagged items its summary kept; toasts what it lost. */
+function recordCompaction($: ModApi, state: State, items: readonly TaggedItem[], trigger: string, kept: readonly SessionMessageSummary[]): void {
+  state.lastCompaction = { at: new Date().toLocaleTimeString(), trigger }
+  state.retention = items.length > 0 ? retentionOf(items, kept.map((message) => message.text ?? '').join('\n')) : undefined
+  const alert = state.retention ? retentionAlert(state.retention) : undefined
+  if (alert) void $.ui.toast(alert)
+  $.ui.invalidate('ui.render')
+}
+
 async function keepTagged($: ModApi, state: State, event: ModEvent, next?: ModNext): Promise<unknown> {
   let items: TaggedItem[] = []
   let forwarded = event
@@ -1016,11 +1053,8 @@ async function keepTagged($: ModApi, state: State, event: ModEvent, next?: ModNe
   const result = await next?.(forwarded)
   try {
     const kept = (result as { messages?: SessionMessageSummary[] } | undefined)?.messages
-    if (items.length > 0 && Array.isArray(kept) && event.trigger !== 'precompute') {
-      state.retention = retentionOf(items, kept.map((message) => message.text ?? '').join('\n'))
-      const alert = retentionAlert(state.retention)
-      if (alert) void $.ui.toast(alert)
-      $.ui.invalidate('ui.render')
+    if (event.agentId === undefined && Array.isArray(kept) && event.trigger !== 'precompute') {
+      recordCompaction($, state, items, String(event.trigger ?? 'manual'), kept)
     }
   } catch {
     // The retention check is best effort; the compaction already happened.

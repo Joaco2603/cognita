@@ -344,7 +344,7 @@ test('the Overview offers c compact only once the pressure card can compact', as
   await new Promise((resolve) => setTimeout(resolve, 30))
   const ui = await $.ui.mount({ ...pane, surface: 'terminal' })
 
-  expect(await ui.find({ text: '1-4 switch views · r refresh · Esc close · /cognita help for commands' })).toBeDefined()
+  expect(await ui.find({ text: '1-5 switch views · r refresh · Esc close · /cognita help for commands' })).toBeDefined()
 })
 
 test('the Overview offers c compact once pressure is measured', async ($, on) => {
@@ -353,5 +353,25 @@ test('the Overview offers c compact once pressure is measured', async ($, on) =>
   await new Promise((resolve) => setTimeout(resolve, 30))
   const ui = await $.ui.mount({ ...pane, surface: 'terminal' })
 
-  expect(await ui.find({ text: '1-4 switch views · r refresh · c compact · Esc close · /cognita help for commands' })).toBeDefined()
+  expect(await ui.find({ text: '1-5 switch views · r refresh · c compact · Esc close · /cognita help for commands' })).toBeDefined()
+})
+
+test('the Pressure view shows tag attention, what compacting keeps, and what the compaction kept', async ($, on) => {
+  const session: Session = { percent: 80, messages: tagged, compacted: [], toasts: [], summary: '- [d1] decision: Use SQLite for the cache\n- [o1] open: details' }
+  await start($, on, session)
+  await $.command.run({ command: 'cognita', args: 'pressure open' })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  const ui = await $.ui.mount({ ...pane, surface: 'terminal' })
+
+  expect(await ui.find({ key: 'pressure-panel' })).toBeDefined()
+  expect(await ui.find({ text: 'TAGGED ITEMS · share of the attention on what you tagged (estimate)' })).toBeDefined()
+  expect(await ui.find({ key: 'pressure-tag-c1' })).toBeDefined()
+  expect(await ui.find({ text: '+ the tagged items by id: c1, d1, o1' })).toBeDefined()
+  expect(await ui.find({ text: 'No compaction since Cognita loaded. After one, each tagged item shows here as kept, rewritten or lost.' })).toBeDefined()
+
+  await ui.press({ key: 'pressure-tab-compact' })
+  expect(session.compacted?.length).toBe(1)
+  expect(session.compacted?.[0]).toContain('[c1] constraint: Do not touch main')
+  expect(await ui.find({ text: '✗ c1    constraint lost  "Do not touch main"' })).toBeDefined()
+  expect(await ui.find({ text: '✓ d1    decision   kept' })).toBeDefined()
 })
