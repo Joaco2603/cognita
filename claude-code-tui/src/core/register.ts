@@ -48,6 +48,8 @@ import {
   DEFAULT_PRESSURE,
   applyPlanCall,
   compactFocus,
+  compactPreview,
+  formatCompactPreview,
   engramPrompt,
   engramSaveTool,
   formatPressure,
@@ -107,7 +109,7 @@ const HELP = [
   '- `/cognita history`: how the loadout changed across the last sessions in this project',
   '- `/cognita cost`: what sessions cost in dollars in this project, per day and per session (`json` for scripts)',
   '- `/cognita pressure`: how hard the context is working (window plus an attention estimate) and the step that relieves it (`json` for scripts)',
-  '- `/cognita compact`: compact now, keeping the goal and the open plan',
+  '- `/cognita compact`: preview what a compaction keeps and drops; `/cognita compact now` compacts, keeping the goal and the open plan',
   '- `/cognita save` · `/cognita split`: send the prompt that saves decisions to Engram, or that hands the plan to subagents',
   '- `/cognita context` · `/cognita access open` · `/cognita pressure open`: open the pane on that view',
   '- `/cognita hold [server]`: keep an MCP server off from the next session in this project (no name lists the held ones)',
@@ -532,8 +534,15 @@ function afterCommand($: ModApi, fn: () => Promise<void>): boolean {
   }
 }
 
-async function compactCommand($: ModApi, state: State): Promise<CommandAnswer> {
-  const focus = withTaggedInstructions(compactFocus(await readConversation($, state)), state.tagged) ?? ''
+async function compactCommand($: ModApi, state: State, isConfirmed: boolean): Promise<CommandAnswer> {
+  const conversation = await readConversation($, state)
+  const focus = withTaggedInstructions(compactFocus(conversation), state.tagged) ?? ''
+  if (!isConfirmed) {
+    const read = await $.session.messages().catch(() => [])
+    const messages = Array.isArray(read) ? read : []
+    const preview = compactPreview({ messages, plan: conversation.plan, prompts: conversation.prompts, tagged: state.tagged })
+    return { text: formatCompactPreview(preview, focus), isTextDisplayOnly: true }
+  }
   const fallback = `\`\`\`\n/compact ${focus}\n\`\`\``
   if (!afterCommand($, () => compactNow($, state, focus))) {
     return { text: `Run this to compact, keeping the goal and the plan:\n\n${fallback}`, isTextDisplayOnly: true }
@@ -706,7 +715,7 @@ async function runCommand($: ModApi, state: State, event: ModEvent): Promise<Com
     }
   }
 
-  if (subcommand === 'compact') return compactCommand($, state)
+  if (subcommand === 'compact') return compactCommand($, state, options.has('now'))
 
   if (subcommand === 'save') {
     const conversation = await readConversation($, state)

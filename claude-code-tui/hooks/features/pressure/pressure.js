@@ -216,6 +216,110 @@ export function compactFocus(input) {
     keep.push('decisions made and why, and the files being changed');
     return `Keep: ${keep.join('; ')}. Drop: finished exploration, long tool output, errors already fixed.`;
 }
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+const ERROR_RESULT = /<tool_use_error>|^\s*error\b/i;
+const PREVIEW_ITEMS = 8;
+const LARGEST_OUTPUTS = 3;
+/** A path without the directories above the project, for display: `/repo/src/a.ts` → `src/a.ts`. */
+function shortPath(path) {
+    const parts = path.split('/').filter(Boolean);
+    return parts.slice(-2).join('/');
+}
+/** What a tool call worked on, in a few words: the file, the command or the pattern. */
+function toolTarget(input) {
+    const value = input?.file_path ?? input?.notebook_path ?? input?.command ?? input?.pattern ?? input?.url;
+    if (typeof value !== 'string')
+        return '';
+    return String(input?.command) === value ? shorten(value, 40) : shortPath(value);
+}
+function listed(values) {
+    const more = values.length > PREVIEW_ITEMS ? ` (+${values.length - PREVIEW_ITEMS} more)` : '';
+    return `${values.slice(0, PREVIEW_ITEMS).join(', ')}${more}`;
+}
+const tokensOf = (chars) => Math.round(chars / 4);
+/**
+ * What a compaction would keep and drop, read from this conversation: the goal,
+ * the plan, tagged items and edited files to keep; finished plan items, tool
+ * output and failed calls to drop. Claude Code writes the summary, so this is
+ * what Cognita asks for, not what the summary will hold.
+ */
+export function compactPreview(input) {
+    const keep = [];
+    const drop = [];
+    const goal = goalOf(input.prompts);
+    if (goal)
+        keep.push(`Goal: "${goal}"`);
+    const byStatus = (status) => input.plan.filter((item) => item.status === status).map((item) => shorten(item.text, 60));
+    const active = byStatus('in_progress');
+    if (active.length > 0)
+        keep.push(`In progress: ${listed(active)}`);
+    const pending = byStatus('pending');
+    if (pending.length > 0)
+        keep.push(`Open plan (${pending.length}): ${listed(pending)}`);
+    if (input.tagged.length > 0) {
+        keep.push(`Tagged items (${input.tagged.length}): ${listed(input.tagged.map((item) => `[${item.id}] ${item.kind}: ${shorten(item.text, 50)}`))}`);
+    }
+    const files = new Set();
+    const outputs = [];
+    const errors = [];
+    for (const message of input.messages) {
+        for (const use of message.toolUses ?? []) {
+            const target = toolTarget(use.input);
+            if (EDIT_TOOLS.has(use.tool) && target)
+                files.add(target);
+            if (PLAN_TOOLS.has(use.tool) || EDIT_TOOLS.has(use.tool))
+                continue;
+            const label = target ? `${use.tool} ${target}` : use.tool;
+            outputs.push({ label, chars: use.text?.length ?? 0 });
+            if (use.text && ERROR_RESULT.test(use.text))
+                errors.push(label);
+        }
+    }
+    if (files.size > 0)
+        keep.push(`Files changed (${files.size}): ${listed([...files])}`);
+    keep.push('Decisions made and why');
+    const done = byStatus('completed');
+    if (done.length > 0)
+        drop.push(`Finished plan items (${done.length}): ${listed(done)}`);
+    if (outputs.length > 0) {
+        const total = outputs.reduce((sum, output) => sum + output.chars, 0);
+        const largest = [...outputs]
+            .sort((a, b) => b.chars - a.chars)
+            .slice(0, LARGEST_OUTPUTS)
+            .filter((output) => tokensOf(output.chars) >= 100)
+            .map((output) => `${output.label} (~${tokensOf(output.chars).toLocaleString('en-US')})`);
+        const detail = largest.length > 0 ? `. Largest: ${largest.join(', ')}` : '';
+        drop.push(`Tool output: ${plural(outputs.length, 'result')}, about ${tokensOf(total).toLocaleString('en-US')} tokens${detail}`);
+    }
+    if (errors.length > 0)
+        drop.push(`Tool results that look like errors: ${errors.length} (${listed(errors)})`);
+    return { keep, drop };
+}
+/** The preview as Markdown, with the exact `/compact` focus and the command that runs it. */
+export function formatCompactPreview(preview, focus) {
+    const bullets = (items) => items.map((item) => `- ${item}`).join('\n');
+    const drop = preview.drop.length > 0 ? bullets(preview.drop) : '- Nothing specific found to drop.';
+    const quoted = focus.split('\n').map((line) => (line ? `> ${line}` : '>')).join('\n');
+    return [
+        '## Compact preview',
+        '',
+        '**Asks to keep**',
+        '',
+        bullets(preview.keep),
+        '',
+        '**Asks to drop** (found in this conversation)',
+        '',
+        drop,
+        '',
+        'The exact focus `/compact` receives:',
+        '',
+        quoted,
+        '',
+        '_Claude Code writes the summary, so this is what Cognita asks for, not a guarantee of what it keeps._',
+        '',
+        'Run `/cognita compact now` to compact.',
+    ].join('\n');
+}
 function plural(count, noun) {
     return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }

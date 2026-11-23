@@ -46,7 +46,8 @@ Start a new Claude Code session and run `/cognita`. If a session is already runn
 | `/cognita cost` | What sessions cost in dollars in this project: total, per day, per session (`json` for scripts) |
 | `/cognita pressure` | Context pressure (window plus an attention estimate) and the steps that relieve it; add `json` for scripts |
 | `/cognita pressure open` | Open the Pressure view (hotkey `5`): attention per tag, what compacting keeps, and what the last compaction kept |
-| `/cognita compact` | Compact now, keeping the goal and the open plan |
+| `/cognita compact` | Preview what a compaction keeps and drops, read from this conversation |
+| `/cognita compact now` | Compact now, keeping the goal and the open plan |
 | `/cognita save` | Send the prompt that saves the goal, decisions and plan to Engram (needs an Engram MCP server) |
 | `/cognita split` | Send the prompt that hands the pending plan items to subagents |
 | `/cognita context`, `/cognita access open`, `/cognita agents` | Open the pane on that view |
@@ -207,7 +208,7 @@ Below 50% the level is `ok` and the command says there is nothing to do yet. Spl
 
 1. Save decisions to Engram first. Run `/cognita save`, which sends:
    > Before this conversation is compacted, use mcp__engram__mem_save to save to Engram: the goal, ...
-2. Compact, keeping the goal and the plan. Run `/cognita compact`, which does the same as:
+2. Compact, keeping the goal and the plan. Run `/cognita compact` to preview what it keeps (goal, plan, tagged items, edited files) and drops (finished plan items, tool output with its size, failed calls), then `/cognita compact now`, which does the same as:
    /compact Keep: the goal "Build a context pressure viewer"; in progress: Write the model; open plan: Wire the view, Add tests; decisions made and why, and the files being changed. Drop: finished exploration, long tool output, errors already fixed.
 3. Split the plan across subagents. Run `/cognita split`, which sends:
    > Delegate these plan items to subagents, one subagent each, if they do not depend on each other: 1) ...
@@ -313,7 +314,7 @@ Commit a `.cognita.json` at the project root so everyone uses the same rules, li
 ## Privacy and safety
 
 - Cognita reads; it never changes your settings. `/cognita trim` prints commands for you to run.
-- It changes the conversation only when you ask: `/cognita compact` (or `c` on the Overview or the Pressure view) compacts, `/cognita save` and `/cognita split` send one prompt. Each prints what it does first.
+- It changes the conversation only when you ask: `/cognita compact now` (or `c` on the Overview or the Pressure view) compacts, `/cognita compact` only previews, `/cognita save` and `/cognita split` send one prompt. Each prints what it does first.
 - The Access check asks the permission system what it *would* answer. No tool runs.
 - Every observing hook only reads the event and passes it on (`next(event)`), inside `try/catch`, so a bug in Cognita can never block a tool call or a prompt.
 - Nothing leaves your machine. Measurements are kept in the plugin's own store, per project, for the "since last session" comparison and the history.
@@ -352,7 +353,7 @@ npm run validate   # claude plugin validate .
 - **"Unused" is a hint.** It means no calls in this session so far. Measure after real work, not right at startup.
 - **The pane doesn't open.** Run `claude plugin validate <plugin folder>`, then `/reload-plugins`. Start `claude --debug` to see any hook errors. `/cognita report` and `/cognita access` work without the pane.
 - **Two plugins answer `/inspector`.** An earlier version is installed as `workspace-dashboard`. `npm run install:local` removes it, or delete `~/.claude/skills/workspace-dashboard`.
-- **`/cognita compact` did not start.** Claude Code compacts only between turns. The command prints the `/compact …` line: run that instead.
+- **`/cognita compact now` did not start.** Claude Code compacts only between turns. The command prints the `/compact …` line: run that instead.
 - **A tagged item shows as lost but the summary has it.** The check looks for its id, then for nearly all its words. If the summary paraphrased it without the id, it counts as lost: say so in the next prompt, or tag it again.
 - **Pressure shows no plan in `claude -p`.** Headless sessions have no todo or task tool, so only the window and your prompts count there.
 - **Git Bash on Windows.** `claude -p "/cognita access"` can turn `/cognita` into a Windows path. Run it from PowerShell or set `MSYS_NO_PATHCONV=1`.
