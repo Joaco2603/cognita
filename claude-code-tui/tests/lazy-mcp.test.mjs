@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { HOLD_AFTER_SESSIONS, readHeld, resolveServer, serverKey, suggestions, toolName, countLoaded, countUsed } from '../hooks/lazy-mcp.js'
+import { HOLD_AFTER_SESSIONS, readHeld, resolveServer, serverKey, suggestions, toolName, countLoaded, countUsed } from '../hooks/features/lazy-mcp/lazy-mcp.js'
 
 test('toolName maps /mcp names to the tool-name spelling and serverKey lowercases it', () => {
   assert.equal(toolName('plugin:cloudflare:cloudflare'), 'plugin_cloudflare_cloudflare')
@@ -47,7 +47,7 @@ test('suggestions list servers loaded in enough sessions and never called, skipp
   assert.deepEqual(suggestions(usage, ['parked']), [{ server: 'db', sessions: HOLD_AFTER_SESSIONS }])
 })
 
-import { createLazyMcp } from '../hooks/lazy-mcp.js'
+import { createLazyMcp } from '../hooks/features/lazy-mcp/lazy-mcp.js'
 
 /** A fake io with a store, a cwd and a recording `mcp.connect`. */
 function fakeApi(stored = {}, answer = (server) => ({ isConnected: true, server })) {

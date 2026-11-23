@@ -6,6 +6,8 @@ import {
   applyPlanCall,
   attentionOf,
   compactFocus,
+  compactPreview,
+  formatCompactPreview,
   engramSaveTool,
   formatPressure,
   formatPressureJson,
@@ -20,7 +22,7 @@ import {
   promptsOf,
   recommend,
   wordCount,
-} from '../hooks/pressure.js'
+} from '../hooks/features/pressure/pressure.js'
 
 const todo = (content, status = 'pending') => ({ content, status, activeForm: content })
 const items = (count, status = 'pending') =>
@@ -277,4 +279,50 @@ test('starting a desktop plan item sends the one in progress back to pending', (
   let plan = applyPlanCall([], { tool, input: { items: [{ content: 'Map', status: 'in_progress' }, { content: 'Build', status: 'pending' }, { content: 'Ship', status: 'pending' }] } })
   plan = applyPlanCall(plan, { tool, input: { start: 3 } })
   assert.deepEqual(plan.map((item) => item.status), ['pending', 'pending', 'in_progress'])
+})
+
+test('compactPreview lists what the transcript holds to keep and to drop', () => {
+  const messages = [
+    { role: 'user', text: 'Build a context pressure viewer for the plugin', toolUses: [] },
+    {
+      role: 'assistant',
+      text: '',
+      toolUses: [
+        { tool: 'Read', input: { file_path: '/repo/src/big.ts' }, text: 'x'.repeat(4000) },
+        { tool: 'Bash', input: { command: 'npm test' }, text: 'Error: 2 tests failed' },
+        { tool: 'Edit', input: { file_path: '/repo/src/view.ts' }, text: 'ok' },
+        { tool: 'Write', input: { file_path: '/repo/src/view.ts' }, text: 'ok' },
+        { tool: 'TodoWrite', input: { todos: [] }, text: 'y'.repeat(9000) },
+      ],
+    },
+  ]
+  const plan = [
+    { id: '1', text: 'Explore the code', detail: '', status: 'completed' },
+    { id: '2', text: 'Write the model', detail: '', status: 'in_progress' },
+    { id: '3', text: 'Add tests', detail: '', status: 'pending' },
+  ]
+  const preview = compactPreview({ messages, plan, prompts: promptsOf(messages), tagged: [{ id: 'c1', kind: 'constraint', text: 'Do not touch main', words: 4 }] })
+
+  assert.deepEqual(preview.keep, [
+    'Goal: "Build a context pressure viewer for the plugin"',
+    'In progress: Write the model',
+    'Open plan (1): Add tests',
+    'Tagged items (1): [c1] constraint: Do not touch main',
+    'Files changed (1): src/view.ts',
+    'Decisions made and why',
+  ])
+  assert.deepEqual(preview.drop, [
+    'Finished plan items (1): Explore the code',
+    'Tool output: 2 results, about 1,005 tokens. Largest: Read src/big.ts (~1,000)',
+    'Tool results that look like errors: 1 (Bash npm test)',
+  ])
+})
+
+test('compactPreview with an empty transcript keeps only decisions and drops nothing found', () => {
+  const preview = compactPreview({ messages: [], plan: [], prompts: [], tagged: [] })
+  assert.deepEqual(preview.keep, ['Decisions made and why'])
+  assert.deepEqual(preview.drop, [])
+  const text = formatCompactPreview(preview, 'Keep: x.')
+  assert.match(text, /Nothing specific found to drop/)
+  assert.match(text, /`\/cognita compact now`/)
 })

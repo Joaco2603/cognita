@@ -21,7 +21,7 @@ test('local install copies all files imported by the hooks module', async () => 
     assert.equal(result.status, 0, result.stderr)
 
     const installedHooks = path.join(home, '.claude', 'skills', 'cognita', 'hooks')
-    for (const file of ['register.js', 'access.js', 'access-view.js', 'agents-view.js', 'context-view.js', 'dashboard-view.js', 'loadout.js', 'theme.js', 'utils.js']) {
+    for (const file of ['core/register.js', 'features/access/access.js', 'features/access/access-view.js', 'features/agents/agents-view.js', 'features/context/context-view.js', 'features/dashboard/dashboard-view.js', 'core/loadout.js', 'core/theme.js', 'core/utils.js']) {
       await readFile(path.join(installedHooks, file), 'utf8')
     }
   } finally {

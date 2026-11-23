@@ -27,8 +27,8 @@ import {
   trendOf,
   summarize,
   toSnapshot,
-} from '../hooks/loadout.js'
-import { basename, dirname, joinPath } from '../hooks/utils.js'
+} from '../hooks/core/loadout.js'
+import { basename, dirname, joinPath } from '../hooks/core/utils.js'
 
 const breakdown = {
   categories: [

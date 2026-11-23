@@ -149,6 +149,7 @@ Registrarlo en la sección siguiente para la entrega.
   - Etiquetas en los prompts: `<important>`, `<constraint>`, `<decision>` y `<open>`, con `id` opcional (si falta, Cognita asigna `c1`, `d1`…). Para cada una estima cuánta atención recibe según su tamaño y su importancia (pesos 1, 1, 0.75 y 0.5) y avisa cuando una importante queda tapada por ítems largos. Cada compactación, también la automática y el `/compact` del usuario, recibe la lista con los ids; después Cognita revisa el resumen nuevo y avisa qué se perdió o se reescribió (por id y palabras compartidas, una estimación).
   - Tests: 44 de UI y 71 unitarios, todos en verde; `claude plugin validate` en verde.
   - Vista Pressure en el panel (`5` o `/cognita pressure open`): en una pantalla, la presión y sus señales, la atención estimada por etiqueta, qué le pide la compactación al resumen (con los ids), `c` para compactar desde ahí y, después, cada etiqueta marcada como kept, rewritten o lost. Hallazgo: la compactación que pide el propio plugin no pasa por su hook `session.compact`, así que la retención se calcula también con el resultado de esa llamada. Tests: 56 de UI y 149 unitarios en verde.
+  - Vista previa antes de compactar: `/cognita compact` ya no compacta; muestra qué pide conservar (objetivo, plan en curso y abierto, etiquetas, archivos editados) y qué pide descartar, leído de la conversación (ítems del plan terminados, salida de herramientas con su tamaño estimado y las más grandes, llamadas que parecen errores), junto con el foco exacto que recibe `/compact`. `/cognita compact now` compacta. Surgió de probarlo: el "Drop" era una frase fija y no dejaba ver si se perdía algo importante. Tests: 59 de UI y 151 unitarios en verde.
 
 ## Cómo usamos AI coding
 
@@ -162,7 +163,8 @@ Registrarlo en la sección siguiente para la entrega.
 
 - [x] Nombre comercial y descripción de una línea pensada para el Marketplace
 - [x] README con propuesta de valor, salida real, instalación y troubleshooting (con video demo)
-- [x] Instalación probada desde cero en Windows y Linux (Docker `node:22`); macOS sin máquina para probar, el plugin no usa nada específico de plataforma
+- [x] Instalación probada desde cero en Windows y Linux (Docker `node:22`); macOS cubierto por el CI (Linux, macOS y Windows en cada push)
+- [x] GIF en el README (raíz y plugin) armado a partir de la grabación real
 - [x] `npm run build`, `npm test` y `npm run validate` en verde
 - [x] Sección "Cómo usamos AI coding" en la entrega
 - [x] Diferencia entre línea base y avance del hackathon documentada

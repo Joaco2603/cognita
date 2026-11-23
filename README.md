@@ -2,6 +2,10 @@
 
 **See everything your Claude Code agent has access to.**
 
+![Cognita in a real Claude Code session: the Overview, what fills the context window, and a risky action that runs without asking](./demo/cognita-demo.gif)
+
+**Found in real sessions:** reading `.env` ran without asking until one deny rule blocked it; a plugin with 16 skills was loaded and never used (~1,080 tokens every session); holding unused MCP servers took a session from 55,505 to 52,861 tokens before the first message.
+
 <img src="claude-code-tui/.claude-plugin/icon.png" alt="Cognita" width="96" align="right">
 
 Every Claude Code session starts with things you didn't choose on purpose: CLAUDE.md files, MCP servers with hundreds of tools, plugin skills, hooks from your settings. Permission rules piled up over months decide what runs without asking. Cognita shows all of it in one pane, inside the session you are already in:
@@ -9,7 +13,7 @@ Every Claude Code session starts with things you didn't choose on purpose: CLAUD
 - **What your agent has loaded.** What fills the context window before you type, what it never uses, and the exact commands to trim it.
 - **What your agent can do.** Which tools it can call, which risky actions (git push, `rm -rf`, reading `.env` or SSH keys, writing outside the project) run **without asking you**, and the rules, hooks and plugins behind that.
 - **What it is doing.** The subagents running in the session and their token use.
-- **How hard the context is working.** One pressure percentage (window plus an estimate of what splits attention: open plan items, long instructions, many turns) and the one step that relieves it: `/cognita compact` with focus built from your goal and plan, `/cognita save` to Engram, or `/cognita split` to subagents. It warns you on its own when pressure rises.
+- **How hard the context is working.** One pressure percentage (window plus an estimate of what splits attention: open plan items, long instructions, many turns) and the one step that relieves it: compact with focus built from your goal and plan (`/cognita compact` previews what it keeps and drops first), `/cognita save` to Engram, or `/cognita split` to subagents. Tag what must survive (`<decision>`, `<constraint>`…) and after every compaction Cognita tells you which items were kept, rewritten or lost. `/cognita pressure` shows the breakdown, and it warns you on its own when pressure rises. Engram is optional: `/cognita save` needs an Engram MCP server, and the rest works without it.
 
 ```bash
 claude plugin marketplace add Joaco2603/cognita
@@ -24,6 +28,7 @@ Then run `/cognita` in a new session.
 
 - **Developers using Claude Code every day**, who want to know why a session starts at 35k tokens and which plugin or MCP server to turn off.
 - **Teams and leads** who need to check what an agent can do on a machine before trusting it with a repo: one `/cognita access` shows whether `git push` or reading `.env` runs without asking.
+  A `.cognita.json` in the repo sets the team's token budget and the minimum verdict per action ("reading `.env` must ask first"); Access flags every violation, `/cognita supply` shows unpinned hooks and MCP servers, `/cognita cost` shows real spend per project, and `/cognita report json` fits into CI.
 - **Plugin and MCP authors**, who want to see what their plugin costs in context and which sections it injects into the system prompt.
 
 ## What it looks like
@@ -59,7 +64,28 @@ Loaded before any message: **33,710 tokens**.
 2. Disable MCP server `claude_ai_Claude_Docs` for this project (3 loaded tools, no calls): frees ~585 (total ~1,665)
 ```
 
-The pane (`/cognita`) has four views: **Overview**, **Context**, **Access** and **Agents**. Switch with `1`–`4`, refresh with `r`, close with `Esc`. Each view lists its keys on its last line.
+Real output of `/cognita pressure` in a fresh session:
+
+```markdown
+## Context pressure: 6% · ok
+
+`█░░░░░░░░░░░░░░░░░░░` window 6% (58,239 of 1,000,000 tokens) + attention 0 / 100 (estimate)
+
+| Attention signal | Value | Points |
+| --- | --- | --- |
+| Open plan items | 0 | 0 / 40 |
+| Words in the open plan | 0 | 0 / 20 |
+| Words in your last 3 prompts | 0 | 0 / 20 |
+| Prompts since the last compaction | 0 | 0 / 20 |
+
+Pressure = window + ½ × attention × (1 − window). Levels: ok below 50%, watch from 50%, act from 70%.
+
+### What to do
+
+Nothing to do yet. Cognita warns you on its own when pressure reaches 50%.
+```
+
+The pane (`/cognita`) has five views: **Overview**, **Context**, **Access**, **Agents** and **Pressure**. Switch with `1`–`5`, refresh with `r`, close with `Esc`. Each view lists its keys on its last line.
 
 Full documentation, all commands, hotkeys and configuration: [`claude-code-tui/README.md`](./claude-code-tui/README.md).
 
@@ -90,7 +116,7 @@ Start a new Claude Code session and run `/cognita`. Requires Claude Code 2.1.275
 
 ```bash
 cd claude-code-tui
-npm test           # build + 37 node unit tests + 28 pane tests (claude plugin test)
+npm test           # build + 149 node unit tests + 56 pane tests (claude plugin test)
 npm run validate   # claude plugin validate .
 ```
 

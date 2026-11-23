@@ -193,10 +193,23 @@ test('CLAUDE_INSPECTOR_PRESSURE_ALERT=0 keeps the automatic check quiet', async 
   expect(session.toasts).toEqual([])
 })
 
-test('/cognita compact compacts, once the command has returned, with focus built from the goal and the plan', async ($, on) => {
+test('/cognita compact shows what it would keep and drop, and does not compact', async ($, on) => {
   const session: Session = { percent: 75, messages: transcript, compacted: [], toasts: [] }
   const clock = await start($, on, session)
   const text = await run($, 'compact')
+
+  expect(text).toContain('## Compact preview')
+  expect(text).toContain(`- Goal: "${GOAL}"`)
+  expect(text).toContain('- Open plan (5): Wire the view, Add tests, Update the README, Bump the version, Open the PR')
+  expect(text).toContain('Run `/cognita compact now` to compact.')
+  await clock.advance(200)
+  expect(session.compacted).toEqual([])
+})
+
+test('/cognita compact now compacts, once the command has returned, with focus built from the goal and the plan', async ($, on) => {
+  const session: Session = { percent: 75, messages: transcript, compacted: [], toasts: [] }
+  const clock = await start($, on, session)
+  const text = await run($, 'compact now')
 
   expect(text).toContain(`Compacting, keeping:\n\n> Keep: the goal "${GOAL}"; in progress: Write the model;`)
   expect(session.compacted).toEqual([])
@@ -207,14 +220,62 @@ test('/cognita compact compacts, once the command has returned, with focus built
   expect(session.toasts).toEqual(['Compacted, keeping the goal and the open plan.'])
 })
 
-test('/cognita compact prints the /compact line and warns when it cannot compact', async ($, on) => {
+test('/cognita compact now prints the /compact line and warns when it cannot compact', async ($, on) => {
   const session: Session = { percent: 75, messages: transcript, compactFails: true, toasts: [] }
   const clock = await start($, on, session)
-  const text = await run($, 'compact')
+  const text = await run($, 'compact now')
 
   expect(text).toContain(`If it does not start, run:\n\n\`\`\`\n/compact Keep: the goal "${GOAL}"`)
   await clock.advance(200)
-  expect(session.toasts?.[0]).toContain('Could not compact now')
+  expect(session.toasts?.[0]).toContain('A turn is running')
+
+  // The turn ends but compacting still fails: print the fallback once.
+  await endTurn($)
+  await clock.advance(200)
+  expect(session.compacted).toEqual(undefined)
+  expect(session.toasts?.[1]).toContain('Could not compact now')
+})
+
+test('/cognita compact now waits for a running turn to end, then compacts', async ($, on) => {
+  const session: Session = { percent: 75, messages: transcript, compactFails: true, compacted: [], toasts: [] }
+  const clock = await start($, on, session)
+  await run($, 'compact now')
+  await clock.advance(200)
+  expect(session.compacted).toEqual([])
+  expect(session.toasts).toEqual(['A turn is running; cognita will compact when it ends.'])
+
+  session.compactFails = false
+  await endTurn($)
+  await clock.advance(200)
+  expect(session.compacted?.length).toBe(1)
+  expect(session.compacted?.[0]).toContain(`Keep: the goal "${GOAL}"`)
+  expect(session.toasts?.[1]).toBe('Compacted, keeping the goal and the open plan.')
+
+  // Nothing stays pending: the next turn does not compact again.
+  await endTurn($)
+  await clock.advance(200)
+  expect(session.compacted?.length).toBe(1)
+})
+
+test('/cognita compact retries on its own once the host lets it, with no turn ending', async ($, on) => {
+  const session: Session = { percent: 75, messages: transcript, compactFails: true, compacted: [], toasts: [] }
+  const clock = await start($, on, session)
+  await run($, 'compact now')
+  await clock.advance(200)
+  await clock.advance(2000)
+  await clock.advance(2000)
+  expect(session.compacted).toEqual([])
+  expect(session.toasts).toEqual(['A turn is running; cognita will compact when it ends.'])
+
+  session.compactFails = false
+  await clock.advance(2000)
+  expect(session.compacted?.length).toBe(1)
+  expect(session.toasts?.[1]).toBe('Compacted, keeping the goal and the open plan.')
+
+  await clock.advance(2000)
+  await endTurn($)
+  await clock.advance(2000)
+  expect(session.compacted?.length).toBe(1)
 })
 
 test('/cognita split sends the prompt that hands the pending items to subagents', async ($, on) => {
@@ -312,7 +373,7 @@ test('any compaction is asked to keep the tagged items, and a lost one is report
 test('/cognita compact adds the tagged items to its focus only once', async ($, on) => {
   const session: Session = { percent: 80, messages: tagged, compacted: [], toasts: [], summary: '[c1] Do not touch main [d1] Use SQLite for the cache [o1] detail' }
   const clock = await start($, on, session)
-  await run($, 'compact')
+  await run($, 'compact now')
   await clock.advance(200)
 
   expect(session.compacted?.length).toBe(1)

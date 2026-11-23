@@ -12,7 +12,7 @@ import {
   retentionOf,
   taggedInstructions,
   withTaggedInstructions,
-} from '../hooks/tags.js'
+} from '../hooks/features/tags/tags.js'
 
 test('extracts the four tags, keeps explicit ids and numbers the rest by kind', () => {
   const items = extractTagged([
