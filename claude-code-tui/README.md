@@ -58,6 +58,8 @@ Start a new Claude Code session and run `/cognita`. If a session is already runn
 
 `/inspector` is an alias of `/cognita`, kept for earlier versions.
 
+**Engram is optional.** Cognita does not write to Engram itself. `/cognita save` only sends a prompt that asks Claude to save to Engram, so it needs an Engram MCP server connected and says so if there is none. Everything else (`compact`, `pressure`, `split`, `access`, `trim`) works without Engram.
+
 ### The pane
 
 What the Overview looks like (numbers from a real session):
@@ -76,31 +78,32 @@ What the Overview looks like (numbers from a real session):
 │   2 Context            │ │ 512 tools · 9 MCP servers · 120 slash commands                │
 │   3 Access             │ │ mode default · 38 permission rules · 14 hooks · 2 plugins     │
 │   4 Agents             │ │ ⚠ Runs without asking: read .env secrets                      │
-│                        │ ╰───────────────────────────────────────────────────────────────╯
+│   5 Pressure           │ ╰───────────────────────────────────────────────────────────────╯
 │ everything at a glance │ ╭───────────────────────────────────────────────────────────────╮
 │ Esc closes             │ │ AGENTS                                           details → 4  │
 ╰────────────────────────╯ │ No subagents in this session yet.                             │
                            ╰───────────────────────────────────────────────────────────────╯
-                           1-4 switch views · r refresh · Esc close · /cognita help for commands
+                           1-5 switch views · r refresh · Esc close · /cognita help for commands
 ```
 
 Every view has its key hints on its last line. The keys:
 
 | Key | Where | Action |
 | --- | --- | --- |
-| `1` `2` `3` `4` | everywhere | Overview, Context, Access, Agents |
+| `1` `2` `3` `4` `5` | everywhere | Overview, Context, Access, Agents, Pressure |
 | `r` | everywhere | Refresh what the view shows |
 | `Esc` | everywhere | Close the pane |
 | `o` `m` `p` `s` `y` | Context | Subviews: Overview, Files, MCP, Skills, Prompt |
 | `x` | Context | Exact count (asks Claude Code for a full breakdown) |
 | `c` | Context, MCP | Connect the servers held in this session |
+| `c` | Overview, Pressure | Compact now, keeping the goal and the open plan |
 | `a` `t` `u` `k` | Access | Subviews: Actions, Tools, Rules, Hooks & plugins |
 
 ## What each view shows
 
 ### Overview
 
-One screen with the three answers: how full the window is and how much of it is idle, how many tools and MCP servers the agent has and whether a risky action runs without asking, and how many subagents are working. Each card opens its view.
+One screen with the answers: how full the window is and how much of it is idle, how many tools and MCP servers the agent has and whether a risky action runs without asking, how many subagents are working, and how hard the context is working (the PRESSURE card). Each card opens its view.
 
 ### Context: what the agent has loaded
 
@@ -195,7 +198,7 @@ Which steps it suggests, once pressure is not ok:
 | Compact, keeping the goal and the plan | window at 30% or more, 15 or more prompts, or no split to suggest | `/cognita compact` |
 | Save decisions to Engram first | one of the above, and an Engram MCP server is connected | `/cognita save` |
 
-Splitting comes first when attention adds more than the window; saving always comes before compacting. Sample output:
+Below 50% the level is `ok` and the command says there is nothing to do yet. Splitting comes first when attention adds more than the window; saving always comes before compacting. Sample output at 78%:
 
 ```
 ## Context pressure: 78% · act
@@ -230,6 +233,8 @@ Items without an `id` get one by kind (`c1`, `d1`, `i1`, `o1`). Cognita then:
 - **Checks retention afterwards.** An item whose id is in the new summary is *kept* when most of its words are on that line and *rewritten* otherwise; with no id it is kept only when nearly all its words are there, else *lost*. A toast names what was lost or rewritten, and `/cognita pressure` and the Overview show the last result. Shared words show how much the text changed, not whether its meaning did.
 
 **The Pressure view.** `/cognita pressure open`, or `5` in the pane, shows it all on one screen: the meter and its signals; each tagged item with its share of the tagged attention (crowded ones marked); what compacting now asks the summary to keep, tag ids included; `c` to compact from there; and, after a compaction (yours, the automatic one or Cognita's), each tagged item as kept, rewritten or lost, quoting the text of the ones that did not survive.
+
+The view is read-only: it shows tags but does not edit them. To change a tag's text or label, write the new tag in your next prompt, keeping the same `id` so Cognita tracks it across compactions.
 
 **Automatic help.** After each turn Cognita measures the pressure again. When the level rises (ok to watch, watch to act) a toast names the cause and the one step to take, and that command appears as the prompt box's suggestion (Tab takes it). It warns once per rise, not every turn.
 
@@ -308,7 +313,7 @@ Commit a `.cognita.json` at the project root so everyone uses the same rules, li
 ## Privacy and safety
 
 - Cognita reads; it never changes your settings. `/cognita trim` prints commands for you to run.
-- It changes the conversation only when you ask: `/cognita compact` (or `c` on the Overview) compacts, `/cognita save` and `/cognita split` send one prompt. Each prints what it does first.
+- It changes the conversation only when you ask: `/cognita compact` (or `c` on the Overview or the Pressure view) compacts, `/cognita save` and `/cognita split` send one prompt. Each prints what it does first.
 - The Access check asks the permission system what it *would* answer. No tool runs.
 - Every observing hook only reads the event and passes it on (`next(event)`), inside `try/catch`, so a bug in Cognita can never block a tool call or a prompt.
 - Nothing leaves your machine. Measurements are kept in the plugin's own store, per project, for the "since last session" comparison and the history.
@@ -331,6 +336,7 @@ npm run validate   # claude plugin validate .
 | `src/access.ts` | Access analysis: sample actions, tools by server, rules, hooks, plugins, commands, warnings |
 | `src/dashboard-view.ts` | The sidebar and the Overview |
 | `src/context-view.ts`, `src/access-view.ts`, `src/agents-view.ts` | The Context, Access and Agents views |
+| `src/pressure.ts`, `src/pressure-view.ts`, `src/tags.ts` | Context pressure (the model and the report), the Pressure view, and the tagged-item tracking and retention |
 | `src/theme.ts` | Colors and the key-hint line shared by the views |
 | `tests/*.test.ts` | Pane tests run by `claude plugin test` with a mocked engine |
 | `tests/*.test.mjs` | Node unit tests for the analysis, the path helpers and the local install |
