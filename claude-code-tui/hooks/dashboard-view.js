@@ -8,12 +8,14 @@ const TABS = [
     { tab: 'context', label: 'Context', hotkey: '2' },
     { tab: 'access', label: 'Access', hotkey: '3' },
     { tab: 'agents', label: 'Agents', hotkey: '4' },
+    { tab: 'pressure', label: 'Pressure', hotkey: '5' },
 ];
 const TAB_HINTS = {
     overview: 'everything at a glance',
     context: 'what fills the window',
     access: 'tools, rules, hooks',
     agents: 'subagents at work',
+    pressure: 'attention, tags, compaction',
 };
 export function renderSidebar(ui, options) {
     const { Box, Button, Text } = ui;
@@ -201,7 +203,7 @@ export function renderOverview(ui, options) {
             card('overview-agents-card', 'AGENTS', 'agents', '4', agentLines),
             options.error ? Text({ key: 'overview-error', children: [options.error], color: ERROR }) : null,
             // `c` lives on the PRESSURE card's button, which shows once pressure is measured.
-            keyHints(ui, `1-4 switch views · r refresh · ${options.onCompact && options.pressure ? 'c compact · ' : ''}Esc close · /cognita help for commands`),
+            keyHints(ui, `1-5 switch views · r refresh · ${options.onCompact && options.pressure ? 'c compact · ' : ''}Esc close · /cognita help for commands`),
         ],
     });
 }

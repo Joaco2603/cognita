@@ -45,6 +45,7 @@ Start a new Claude Code session and run `/cognita`. If a session is already runn
 | `/cognita history` | The loadout over the last 20 sessions in this project, with a sparkline |
 | `/cognita cost` | What sessions cost in dollars in this project: total, per day, per session (`json` for scripts) |
 | `/cognita pressure` | Context pressure (window plus an attention estimate) and the steps that relieve it; add `json` for scripts |
+| `/cognita pressure open` | Open the Pressure view (hotkey `5`): attention per tag, what compacting keeps, and what the last compaction kept |
 | `/cognita compact` | Compact now, keeping the goal and the open plan |
 | `/cognita save` | Send the prompt that saves the goal, decisions and plan to Engram (needs an Engram MCP server) |
 | `/cognita split` | Send the prompt that hands the pending plan items to subagents |
@@ -227,6 +228,8 @@ Items without an `id` get one by kind (`c1`, `d1`, `i1`, `o1`). Cognita then:
 - **Estimates the attention each one gets**: its share of the window, and its share of the attention on tagged items, `weight × tokens` over the sum. A short constraint next to a long open item gets little, and the report flags an `important` or `constraint` item that gets under half an even share as *crowded out*. This is an estimate: it assumes attention follows size, scaled by importance.
 - **Asks every compaction to keep them by id**, yours (`/compact …`), the automatic one and `/cognita compact` alike: the summarizer gets one line per item, `[c1] constraint: Do not touch main`.
 - **Checks retention afterwards.** An item whose id is in the new summary is *kept* when most of its words are on that line and *rewritten* otherwise; with no id it is kept only when nearly all its words are there, else *lost*. A toast names what was lost or rewritten, and `/cognita pressure` and the Overview show the last result. Shared words show how much the text changed, not whether its meaning did.
+
+**The Pressure view.** `/cognita pressure open`, or `5` in the pane, shows it all on one screen: the meter and its signals; each tagged item with its share of the tagged attention (crowded ones marked); what compacting now asks the summary to keep, tag ids included; `c` to compact from there; and, after a compaction (yours, the automatic one or Cognita's), each tagged item as kept, rewritten or lost, quoting the text of the ones that did not survive.
 
 **Automatic help.** After each turn Cognita measures the pressure again. When the level rises (ok to watch, watch to act) a toast names the cause and the one step to take, and that command appears as the prompt box's suggestion (Tab takes it). It warns once per rise, not every turn.
 
