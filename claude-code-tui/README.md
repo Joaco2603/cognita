@@ -330,14 +330,14 @@ npm run validate   # claude plugin validate .
 
 | Path | Role |
 | --- | --- |
-| `src/register.ts` | The hooks module: the `/cognita` command, the pane, the observe-only hooks and the `mcp.connect` hold hook |
-| `src/lazy-mcp.ts` | Lazy MCP: the `mcp.connect` hold hook, the hold list in the store, and the `hold`, `connect` and `release` commands |
-| `src/loadout.ts` | Context analysis: groups the breakdown, joins it with usage, finds idle items, formats the reports |
-| `src/access.ts` | Access analysis: sample actions, tools by server, rules, hooks, plugins, commands, warnings |
-| `src/dashboard-view.ts` | The sidebar and the Overview |
-| `src/context-view.ts`, `src/access-view.ts`, `src/agents-view.ts` | The Context, Access and Agents views |
-| `src/pressure.ts`, `src/pressure-view.ts`, `src/tags.ts` | Context pressure (the model and the report), the Pressure view, and the tagged-item tracking and retention |
-| `src/theme.ts` | Colors and the key-hint line shared by the views |
+| `src/core/register.ts` | The hooks module: the `/cognita` command, the pane, the observe-only hooks and the `mcp.connect` hold hook |
+| `src/features/lazy-mcp/lazy-mcp.ts` | Lazy MCP: the `mcp.connect` hold hook, the hold list in the store, and the `hold`, `connect` and `release` commands |
+| `src/core/loadout.ts` | Context analysis: groups the breakdown, joins it with usage, finds idle items, formats the reports |
+| `src/features/access/access.ts` | Access analysis: sample actions, tools by server, rules, hooks, plugins, commands, warnings |
+| `src/features/dashboard/dashboard-view.ts` | The sidebar and the Overview |
+| `src/features/context/context-view.ts`, `src/features/access/access-view.ts`, `src/features/agents/agents-view.ts` | The Context, Access and Agents views |
+| `src/features/pressure/pressure.ts`, `src/features/pressure/pressure-view.ts`, `src/features/tags/tags.ts` | Context pressure (the model and the report), the Pressure view, and the tagged-item tracking and retention |
+| `src/core/theme.ts` | Colors and the key-hint line shared by the views |
 | `tests/*.test.ts` | Pane tests run by `claude plugin test` with a mocked engine |
 | `tests/*.test.mjs` | Node unit tests for the analysis, the path helpers and the local install |
 

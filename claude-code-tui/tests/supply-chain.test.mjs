@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { analyzeSupplyChain, classifyCommand, formatSupplyChain, formatSupplyChainJson } from '../hooks/supply-chain.js'
+import { analyzeSupplyChain, classifyCommand, formatSupplyChain, formatSupplyChainJson } from '../hooks/features/supply-chain/supply-chain.js'
 
 const pin = (command, args) => classifyCommand(command, args).pin
 

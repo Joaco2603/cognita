@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { parsePolicy, policyViolations, mergeAlerts, customProbes, policyReadFailure, POLICY_FILE } from '../hooks/policy.js'
+import { parsePolicy, policyViolations, mergeAlerts, customProbes, policyReadFailure, POLICY_FILE } from '../hooks/features/access/policy.js'
 
 test('parsePolicy reads budget (number or "30k"), alert and require', () => {
   const { policy, warnings } = parsePolicy(JSON.stringify({ budget: '30k', alert: 1500, require: { env: 'ask', delete: 'deny' } }))

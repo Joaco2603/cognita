@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { analyzeAccess, countHooks, formatAccess, PROBES, readRuleSet, riskyAllowed } from '../hooks/access.js'
+import { analyzeAccess, countHooks, formatAccess, PROBES, readRuleSet, riskyAllowed } from '../hooks/features/access/access.js'
 
 const probe = (key, verdict, extra = {}) => {
   const base = PROBES.find((item) => item.key === key)

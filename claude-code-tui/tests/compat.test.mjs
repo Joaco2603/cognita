@@ -1,7 +1,7 @@
 // Unit tests for the engine API compatibility check, run against the built hooks.
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { REQUIREMENTS, checkCompatibility, probeEngine, compatLine, compatToast, formatDoctor } from '../hooks/compat.js'
+import { REQUIREMENTS, checkCompatibility, probeEngine, compatLine, compatToast, formatDoctor } from '../hooks/core/compat.js'
 
 /** A probe record where every probed API exists. */
 function fullProbes() {

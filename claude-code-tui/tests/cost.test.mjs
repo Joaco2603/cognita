@@ -11,8 +11,8 @@ import {
   perDay,
   recordCost,
   spendLine,
-} from '../hooks/cost.js'
-import { formatHistory } from '../hooks/loadout.js'
+} from '../hooks/features/cost/cost.js'
+import { formatHistory } from '../hooks/core/loadout.js'
 
 const NOW = new Date(2026, 10, 22, 15, 0, 0) // local 2026-11-22
 

@@ -37,7 +37,7 @@ await rm(path.join(installRoot, 'hooks'), { recursive: true, force: true })
 await mkdir(path.join(installRoot, '.claude-plugin'), { recursive: true })
 await copyFile(path.join(pluginRoot, '.claude-plugin', 'plugin.json'), path.join(installRoot, '.claude-plugin', 'plugin.json'))
 await cp(path.join(pluginRoot, 'hooks'), path.join(installRoot, 'hooks'), { recursive: true })
-await access(path.join(installRoot, 'hooks', 'register.js'))
+await access(path.join(installRoot, 'hooks', 'core', 'register.js'))
 
 process.stdout.write(`Installed Cognita to ${installRoot}\n`)
 process.stdout.write('Start a new Claude Code session, then run /cognita.\n')

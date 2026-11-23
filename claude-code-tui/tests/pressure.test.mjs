@@ -20,7 +20,7 @@ import {
   promptsOf,
   recommend,
   wordCount,
-} from '../hooks/pressure.js'
+} from '../hooks/features/pressure/pressure.js'
 
 const todo = (content, status = 'pending') => ({ content, status, activeForm: content })
 const items = (count, status = 'pending') =>
